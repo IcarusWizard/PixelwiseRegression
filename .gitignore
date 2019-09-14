@@ -1,0 +1,6 @@
+__pycache__/
+Data/*
+Model/*
+.vscode/
+Result/*.txt
+*.pyc

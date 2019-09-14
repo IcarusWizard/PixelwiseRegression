@@ -1,0 +1,183 @@
+import torch
+from torch.functional import F
+
+from utils import generate_com_filter
+
+class ResBlock(torch.nn.Module):
+    def __init__(self, features, inplace=True):
+        super(ResBlock, self).__init__()
+        self.conv = torch.nn.Sequential(
+            torch.nn.BatchNorm2d(features),
+            torch.nn.ReLU(inplace),
+            torch.nn.Conv2d(features, features // 2, 1, stride=1),
+            torch.nn.BatchNorm2d(features // 2),
+            torch.nn.ReLU(inplace),
+            torch.nn.Conv2d(features // 2, features // 2, 3, stride=1, padding=1),
+            torch.nn.BatchNorm2d(features // 2),
+            torch.nn.ReLU(inplace),
+            torch.nn.Conv2d(features // 2, features, 1, stride=1)
+        )
+
+    def forward(self, x):
+        return x + self.conv(x)
+
+class Hourglass(torch.nn.Module):
+    def __init__(self, features, level=4):
+        super(Hourglass, self).__init__()
+        self.input_conv = ResBlock(features)
+        self.down_sample = torch.nn.MaxPool2d(2, stride=2)
+
+        if level > 0:
+            self.inner = Hourglass(features, level - 1)
+        else:
+            self.inner = ResBlock(features)
+
+        self.output_conv = ResBlock(features)
+        self.up_sample = torch.nn.UpsamplingNearest2d(scale_factor=2)
+
+    def forward(self, x):
+        h = self.input_conv(x)
+        h = self.down_sample(h)
+
+        h = self.inner(h)
+
+        h = self.output_conv(h)
+        h = self.up_sample(h)
+
+        return h
+
+class PlaneRegression(torch.nn.Module):
+    def __init__(self, features, joints, label_size, inplace=True):
+        super(PlaneRegression, self).__init__()
+        self.conv = torch.nn.Sequential(
+            torch.nn.Conv2d(features, features, 3, stride=1, padding=1),
+            torch.nn.BatchNorm2d(features),
+            torch.nn.ReLU(inplace),
+            torch.nn.Conv2d(features, features, 3, stride=1, padding=1),
+            torch.nn.BatchNorm2d(features),
+            torch.nn.ReLU(inplace),
+            torch.nn.Conv2d(features, features, 3, stride=1, padding=1),
+            torch.nn.BatchNorm2d(features),
+            torch.nn.ReLU(inplace),
+            torch.nn.Conv2d(features, joints, 3, stride=1, padding=1)
+        )
+
+        com_weight = generate_com_filter(label_size, label_size) # ndarray[label_size, label_size, 2]
+        com_weight = torch.from_numpy(com_weight).float()
+        com_weight = com_weight.permute(2, 0, 1).contiguous()
+
+        self.register_buffer('filter', com_weight)
+
+    def forward(self, f):
+        heatmaps = self.conv(f)
+
+        B, J, H, W = heatmaps.shape
+
+        heatmaps = heatmaps.view(B, J, -1)
+        heatmaps = F.softmax(heatmaps, dim=2)
+        heatmaps = heatmaps.view(B, J, H, W)
+
+        u = torch.sum(self.filter[0].view(1, 1, H, W) * heatmaps, dim=(2, 3)).unsqueeze(-1)
+        v = torch.sum(self.filter[1].view(1, 1, H, W) * heatmaps, dim=(2, 3)).unsqueeze(-1)
+
+        plane_coordinates = torch.cat([u, v], dim=2)
+
+        return heatmaps, plane_coordinates
+
+
+class DepthRegression(torch.nn.Module):
+    def __init__(self, features, joints, inplace=True):
+        super(DepthRegression, self).__init__()
+        self.conv = torch.nn.Sequential(
+            torch.nn.Conv2d(features, features, 3, stride=1, padding=1),
+            torch.nn.BatchNorm2d(features),
+            torch.nn.ReLU(inplace),
+            torch.nn.Conv2d(features, features, 3, stride=1, padding=1),
+            torch.nn.BatchNorm2d(features),
+            torch.nn.ReLU(inplace),
+            torch.nn.Conv2d(features, features, 3, stride=1, padding=1),
+            torch.nn.BatchNorm2d(features),
+            torch.nn.ReLU(inplace),
+            torch.nn.Conv2d(features, joints, 3, stride=1, padding=1)
+        )
+    
+    def forward(self, f, heatmaps, label_img, mask):
+        depthmaps = self.conv(f)
+
+        # if the input don't have extra dim
+        # label_img = label_img.unsqueeze(1)
+        # mask = mask.unsqueeze(1)
+
+        reconstruction = depthmaps + label_img
+        masked_reconstruction = mask * reconstruction
+        masked_heatmaps = heatmaps * mask
+
+        depth_coordinates = torch.sum(masked_heatmaps * masked_reconstruction, dim=(2, 3)) / (
+            torch.sum(masked_heatmaps, dim=(2, 3)) + 1e-14 # prevent all masked heatmap
+        )       
+        depth_coordinates = depth_coordinates.unsqueeze(-1)
+
+        return depthmaps, depth_coordinates
+
+class PredictionBlock(torch.nn.Module):
+    def __init__(self, in_dim, joints, label_size=64, features=256, level=4):
+        super(PredictionBlock, self).__init__()
+        self.conv = torch.nn.Conv2d(in_dim, features, 1, stride=1, padding=0)
+
+        self.hourglass = Hourglass(features, level)
+
+        self.plane_regression = PlaneRegression(features, joints, label_size)
+        self.depth_regression = DepthRegression(features, joints)
+
+    def forward(self, x, label_img, mask):
+        f = self.hourglass(self.conv(x))
+
+        heatmaps, plane_coordinates = self.plane_regression(f)
+
+        depthmaps, depth_coordinates = self.depth_regression(f, heatmaps, label_img, mask)
+
+        return f, heatmaps, depthmaps, torch.cat([plane_coordinates, depth_coordinates], dim=2)
+
+class PixelwiseRegression(torch.nn.Module):
+    def __init__(self, joints, stage=2, label_size=64, features=256, level=4):
+        super(PixelwiseRegression, self).__init__()
+        init_conv = [
+            torch.nn.Conv2d(1, 32, 3, stride=1, padding=1),
+            torch.nn.BatchNorm2d(32),
+            torch.nn.ReLU(True)
+        ]
+
+        conv_features = 32
+        while conv_features < features:
+            init_conv.extend([
+                torch.nn.Conv2d(conv_features, 2 * conv_features, 3, stride=1, padding=1),
+                torch.nn.BatchNorm2d(2 * conv_features),
+                torch.nn.ReLU(True)
+            ])
+            conv_features *= 2
+
+        init_conv.extend([
+            torch.nn.Conv2d(features, features, 3, stride=2, padding=1),
+            torch.nn.BatchNorm2d(features),
+            torch.nn.ReLU(True)
+        ])
+
+        self.conv = torch.nn.Sequential(*init_conv)
+
+        concat_dim = features + 2 * joints + 1
+        stage_list = [
+            PredictionBlock(features if i == 0 else concat_dim, joints, label_size, features) for i in range(stage)
+        ]
+
+        self.stages = torch.nn.ModuleList(stage_list)
+
+    def forward(self, img, label_img, mask):
+        f = self.conv(img)
+
+        results = []
+        for stage in self.stages:
+            f, heatmaps, depthmaps, uvd = stage(f, label_img, mask)
+            results.append((heatmaps, depthmaps, uvd))
+            f = torch.cat([f, heatmaps, depthmaps, label_img], dim=1)
+
+        return results # list of tuple
