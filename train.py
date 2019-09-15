@@ -3,7 +3,8 @@ import matplotlib.pyplot as plt
 import torch, torchvision
 from torch.utils.tensorboard import SummaryWriter
 
-import os, argparse, tqdm
+import os, argparse
+from tqdm import tqdm
 
 from model import PixelwiseRegression
 import datasets
@@ -42,8 +43,8 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=0)
 
     parser.add_argument('--lr', type=float, default=2e-4)
-    parser.add_argument("--lambda_h", type=float, default=1.0)
-    parser.add_argument('--lambda_d', type=float, default=1.0)
+    parser.add_argument("--lambda_h", type=float, default=100.0)
+    parser.add_argument('--lambda_d', type=float, default=0.1)
     parser.add_argument('--alpha', type=float, default=0.5)
 
     args = parser.parse_args()
@@ -93,11 +94,11 @@ if __name__ == '__main__':
 
     Dataset = getattr(datasets, "{}Dataset".format(args.dataset))
     trainset = Dataset(**dataset_parameters)
-    joints = trainset.joints
-    valset, trainset = torch.utils.data.random_split(trainset, (1024, len(trainset) - 1000))
 
     joints = trainset.joint_number
     config = trainset.config
+    
+    valset, trainset = torch.utils.data.random_split(trainset, (1024, len(trainset) - 1024))
 
     train_loader = torch.utils.data.DataLoader(trainset, **train_loader_parameters)
     val_loader = torch.utils.data.DataLoader(valset, **val_loader_parameters)
@@ -145,15 +146,15 @@ if __name__ == '__main__':
             if step % args.log_step == 0:
                 # log image results in tensorboard
                 writer.add_images('input_image', img, global_step=step)
-                writer.add_images('input_heatmap', heatmaps[0].unsqueeze(1), global_step=step)
+                writer.add_images('input_heatmap', heatmaps[0].unsqueeze(1) / heatmaps[0].max(), global_step=step)
                 writer.add_images('input_depthmap', depthmaps[0].unsqueeze(1), global_step=step)
-                skeleton = draw_skeleton_torch(img[0], uvd[0], config, global_step=step)
+                skeleton = draw_skeleton_torch(img[0].cpu(), uvd[0].cpu(), config)
                 writer.add_image('input_skeleton', skeleton, global_step=step)
                 for i, result in enumerate(results):
                     _heatmaps, _depthmaps, _uvd = result
-                    writer.add_images('stage{}_heatmap'.format(i), _heatmaps[0].unsqueeze(1), global_step=step)
+                    writer.add_images('stage{}_heatmap'.format(i), _heatmaps[0].unsqueeze(1) / _heatmaps[0].max(), global_step=step)
                     writer.add_images('stage{}_depthmap'.format(i), _depthmaps[0].unsqueeze(1), global_step=step)
-                    _skeleton = draw_skeleton_torch(img[0], _uvd[0], config)
+                    _skeleton = draw_skeleton_torch(img[0].cpu(), _uvd[0].detach().cpu(), config)
                     writer.add_image('stage{}_skeleton'.format(i), _skeleton, global_step=step)
                          
                 with torch.no_grad():
@@ -186,14 +187,14 @@ if __name__ == '__main__':
                             val_every_loss[i] = ((
                                 _heatmaps_loss + heatmap_loss, 
                                 _depthmap_loss + depthmap_loss, 
-                                _und_loss + uvd_loss))
+                                _uvd_loss + uvd_loss))
                     
                     for i in range(len(results)):
                         _heatmaps_loss, _depthmap_loss, _uvd_loss = val_every_loss[i]
                         val_every_loss[i] = ((
                             _heatmaps_loss / num, 
                             _depthmap_loss / num, 
-                            _und_loss / num))
+                            _uvd_loss / num))
 
                     val_loss = 0
                     for losses in val_every_loss:

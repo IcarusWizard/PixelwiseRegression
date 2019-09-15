@@ -1,5 +1,6 @@
 __pycache__/
 data/*
+logs/*
 Model/*
 .vscode/
 Result/*.txt

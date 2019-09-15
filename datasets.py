@@ -54,7 +54,7 @@ class HandDataset(torch.utils.data.Dataset):
         """
             Overwrite function in Dataset
         """
-        return self.process_single_data(text_list[index])
+        return self.process_single_data(self.text_list[index])
 
     def __len__(self):
         """

@@ -76,7 +76,7 @@ def random_rotated(img, uvd):
 
     return rot_img, uvd
 
-def draw_skeleton(img, joints, config, *, rP = 6, linewidth = 3):
+def draw_skeleton(img, joints, config, *, rP = 3, linewidth = 1):
     if joints.shape[0] == 14:
         img3D = np.zeros((img.shape[0], img.shape[1], 3))
         for i in range(3):
@@ -108,12 +108,12 @@ def draw_skeleton(img, joints, config, *, rP = 6, linewidth = 3):
                 cv2.line(img3D, _joint[config[i][j]], _joint[config[i][j+1]], colors[i], linewidth)
         return img3D
 
-def draw_skeleton_torch(img, joints, config, *, rP = 6, linewidth = 3):
+def draw_skeleton_torch(img, joints, config, *, rP = 3, linewidth = 1):
     img = img.numpy()[0]
     size = img.shape[0]
     joints = joints.numpy() * (size - 1) + np.array([size // 2, size // 2, 0])
     img3D = draw_skeleton(img, joints, config, rP=rP, linewidth=linewidth)
-    img3D = torch.from_numpy().float().permute(2, 0, 1).contiguous()
+    img3D = torch.from_numpy(img3D).float().permute(2, 0, 1).contiguous()
     return img3D
 
 def findmax_batch(img):
