@@ -17,12 +17,14 @@ If you find this open source release useful, please reference in your paper:
 
 ## Requirement  
 PyTorch >= 1.0  
-matplotlib
+tensorboard (install by `pip install tb-nightly`)
 
 ## Dataset  
 All datasets should be placed in `./data` folder.  
 ### MSRA  
-- Download the dataset from 
+1. Download the dataset from [dropbox](https://www.dropbox.com/s/bmx2w0zbnyghtp7/cvpr15_MSRAHandGestureDB.zip?dl=0).
+2. Unzip the files to `./data` and rename the folder as `MSRA`.
+3. Download the default [train.txt](https://drive.google.com/open?id=1JaBPrhTwPYeaasz1-LsseRBFPm-jWFmU) and [test.txt](https://drive.google.com/open?id=15VqwOfUc0vGX1ivi6GygnQ0pb3JB43L8) from Google Drive. In our default setting, only 76318 frames are valid for training. If you don't want to use our default setting, feel free to change the parameters in `datasets.py`, and run `python check_dataset.py` to build the data files.
 
 ### ICVL  
 
@@ -33,3 +35,7 @@ All datasets should be placed in `./data` folder.
 ## Test  
 
 ## Result  
+You can download our results from Google Drive
+- MSRA: [test result]() [model]()
+- ICVL: [test result]() [model]()
+- HAND17: [test result]() [model]()
