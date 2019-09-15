@@ -20,7 +20,7 @@ PyTorch >= 1.0
 matplotlib
 
 ## Dataset  
-All datasets should be placed in `./dataset` folder.  
+All datasets should be placed in `./data` folder.  
 ### MSRA  
 - Download the dataset from 
 

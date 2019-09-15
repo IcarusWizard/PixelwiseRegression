@@ -35,7 +35,7 @@ def generate_com_filter(size_u, size_v):
 
 def generate_heatmap(img_size, u, v):
     """
-    Return heatmap base on the location
+        Return heatmap base on the location
     """
     try:
         heatmap = np.zeros((img_size, img_size))
@@ -60,7 +60,7 @@ def generate_heatmap(img_size, u, v):
     except:
         raise Exception("Out of range")
 
-def generate_kernal(heatmap, kernel_size = 3, sigmoid = 1.5):
+def generate_kernel(heatmap, kernel_size = 3, sigmoid = 1.5):
     return cv2.GaussianBlur(heatmap, (kernel_size, kernel_size), sigmoid)
 
 def random_rotated(img, uvd):

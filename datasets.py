@@ -6,10 +6,12 @@ from scipy.ndimage.measurements import center_of_mass # use to compute center of
 from scipy.io import loadmat
 import cv2
 
-import os, random, time, struct, re, tqdm
+import os, random, time, struct, re
+from tqdm import tqdm
+import multiprocessing as mp
 
 from utils import load_bin, draw_skeleton, center_crop, \
-    generate_com_filter, floodFillDepth, generate_heatmap, random_rotated
+    generate_com_filter, floodFillDepth, generate_heatmap, random_rotated, generate_kernel
 
 class HandDataset(torch.utils.data.Dataset):
     def __init__(self, fx, fy, halfu, halfv, path, sigmoid, image_size, kernel_size,
@@ -23,7 +25,7 @@ class HandDataset(torch.utils.data.Dataset):
         self.path = path                    # path contains the dataset
         self.sigmoid = sigmoid              # the sigmoid used in the gauss filter
         self.image_size = image_size        # the output image size
-        self.kernel_size = kernel_size      # kernal size of the gauss filter 
+        self.kernel_size = kernel_size      # kernel size of the gauss filter 
         self.label_size = label_size        # the size of label images
         self.test_only = test_only          # set to True, the dataset will not return heatmap and depthmap
         self.using_rotation = using_rotation# whether to perform random rotation for images
@@ -153,7 +155,7 @@ class HandDataset(torch.utils.data.Dataset):
                 text: string    a line of text in the data file
                 img_size: int   the output image size
                 using_rotation bool if to use random rotation to make data enhancement
-                kernel_size int the size of kernal in gauss kernal
+                kernel_size int the size of kernel in gauss kernel
                 label_size: int the output label size
             OUTPUT:
                 Normalized Image, Normalized Label Image, mask, Box Size, COM
@@ -245,10 +247,10 @@ class HandDataset(torch.utils.data.Dataset):
             img_resize, joint_uvd_centered_resize = random_rotated(img_resize, joint_uvd_centered_resize)
 
         # Generate Heatmap
-        joint_uvd_kernal = joint_uvd_centered_resize.copy()
-        joint_uvd_kernal[:,:2] = joint_uvd_kernal[:,:2] / (self.image_size - 1) * (self.label_size - 1) + np.array([self.label_size // 2, self.label_size // 2])
+        joint_uvd_kernel = joint_uvd_centered_resize.copy()
+        joint_uvd_kernel[:,:2] = joint_uvd_kernel[:,:2] / (self.image_size - 1) * (self.label_size - 1) + np.array([self.label_size // 2, self.label_size // 2])
         try:
-            heatmaps = [generate_kernal(generate_heatmap(self.label_size, joint_uvd_kernal[i, 0], joint_uvd_kernal[i, 1]), kernel_size=self.kernel_size, sigmoid=self.sigmoid)[:, :, np.newaxis] for i in range(self.joint_number)]
+            heatmaps = [generate_kernel(generate_heatmap(self.label_size, joint_uvd_kernel[i, 0], joint_uvd_kernel[i, 1]), kernel_size=self.kernel_size, sigmoid=self.sigmoid)[:, :, np.newaxis] for i in range(self.joint_number)]
         except:
             path, _ = self.decode_line_txt(text)
             print("{} heatmap error".format(path))
@@ -295,7 +297,7 @@ class HandDataset(torch.utils.data.Dataset):
         return normalized_img, normalized_label_img, mask, box_size, com, normalized_uvd, heatmaps, normalized_Dmap        
 
 class MSRADataset(HandDataset):
-    def __init__(self, fx = 241.42, fy = 241.42, halfu = 160, halfv = 120, path="data/MSRA15", 
+    def __init__(self, fx = 241.42, fy = 241.42, halfu = 160, halfv = 120, path="data/MSRA", 
                 sigmoid=1.5, image_size=128, kernel_size=7,
                 label_size=64, test_only=False, using_rotation=False, using_scale=False, using_flip=False, 
                 scale_factor=50000, threshold=200, joint_number=21, dataset='train'):
@@ -310,6 +312,13 @@ class MSRADataset(HandDataset):
         Thumb = [0, 17, 18, 19, 20]
         self.config = [Thumb, Index, Mid, Ring, Small]
 
+    def check_text(self, text):
+        try:
+            self.process_single_data(text)
+            return text
+        except:
+            return False
+
     def build_data(self):
         if self.data_ready:
             print("Data is Already build~")
@@ -317,6 +326,7 @@ class MSRADataset(HandDataset):
         
         persons = ["P%d" % i for i in range(9)]
         gestures = os.listdir(os.path.join(self.path, persons[0]))
+        gestures.sort()
         paths = [os.path.join(self.path, person, gesture) for person in persons for gesture in gestures]
         bin_paths = []
         joints = []
@@ -324,7 +334,6 @@ class MSRADataset(HandDataset):
         print('loading file list ......')
         with tqdm(total=len(paths)) as pbar:
             for i, path in enumerate(paths):
-                print("Loading data %d\t/\t%d" %(i+1, len(paths)))
                 _joints = np.loadtxt(os.path.join(path, 'joint.txt'), skiprows=1)
                 with open(os.path.join(path, 'joint.txt')) as f:
                     samples = int(f.readline())
@@ -334,7 +343,7 @@ class MSRADataset(HandDataset):
                 joints.append(_joints.reshape((samples, 63)))
                 for j in range(samples):
                     bin_paths.append(os.path.join(path, "%06d_depth.bin" % j))
-            pbar.update(1)
+                pbar.update(1)
         joints = np.concatenate(joints, axis=0)
 
         print('saving test.txt ......')
@@ -345,18 +354,33 @@ class MSRADataset(HandDataset):
         with open(dataname, 'r') as f:
             datatexts = f.readlines()
 
+        pool = mp.Pool(processes=os.cpu_count())
+        processing = []
+        for text in datatexts:
+            r = pool.apply_async(self.check_text, (text, ))
+            processing.append(r)
+
         traintxt = []
         with tqdm(total=len(datatexts)) as pbar:
-            for text in datatexts:
-                try:
-                    self.process_single_data(text)
+            for r in processing:
+                text = r.get()
+                if text:
                     traintxt.append(text)
-                except:
-                    pass
                 pbar.update(1)
+        pool.close()
+
+        # traintxt = []
+        # with tqdm(total=len(datatexts)) as pbar:
+        #     for text in datatexts:
+        #         try:
+        #             self.process_single_data(text)
+        #             traintxt.append(text)
+        #         except:
+        #             pass
+        #         pbar.update(1)
         
-        print('{} / {} data can use to train')
-        with open(os.path.join(self.path, "train.txt"), 'w'):
+        print('{} / {} data can use to train'.format(len(traintxt), len(datatexts)))
+        with open(os.path.join(self.path, "train.txt"), 'w') as f:
             f.writelines(traintxt)
         
     def load_from_text(self, text):
