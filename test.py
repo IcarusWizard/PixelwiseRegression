@@ -110,4 +110,4 @@ if __name__ == '__main__':
         pre_uvd = torch.cat(pre_uvd, dim=0)
         pre_uvd = pre_uvd.numpy()
 
-        np.savetxt("Result/{}.txt".format(args.dataset), pre_uvd, fmt="%.3f")
+        np.savetxt("Result/{}_{}.txt".format(args.dataset, args.suffix), pre_uvd, fmt="%.3f")
