@@ -20,7 +20,7 @@ if __name__ == '__main__':
         help="choose from MSRA, ICVL, NYU, HAND17"    
     )
 
-    parser.add_argument('--random_seed', type=int, default=0,
+    parser.add_argument('--seed', type=int, default=0,
         help="the random seed used in the training, 0 means do not use fix seed"    
     )
 
@@ -40,7 +40,6 @@ if __name__ == '__main__':
     parser.add_argument('--level', type=int, default=4)
     parser.add_argument('--log_step', type=int, default=500)
     parser.add_argument('--save_step', type=int, default=10000)
-    parser.add_argument('--seed', type=int, default=0)
 
     parser.add_argument('--lr', type=float, default=2e-4)
     parser.add_argument("--lambda_h", type=float, default=100.0)

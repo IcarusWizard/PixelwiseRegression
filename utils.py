@@ -284,3 +284,10 @@ def step_loader(dataloder):
             data = iter(dataloder)
             x = next(data)
         yield x
+
+def recover_uvd(uvd, box_size, com, threshold):
+    uvd[:, :, :2] = uvd[:, :, :2] * (box_size - 1).view(-1, 1, 1)
+    uvd[:, :, 2] = uvd[:, :, 2] * threshold
+    uvd = uvd + com.unsqueeze(1)
+
+    return uvd

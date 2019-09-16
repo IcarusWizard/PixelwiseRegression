@@ -229,7 +229,7 @@ class HandDataset(torch.utils.data.Dataset):
             normalized_img = torch.from_numpy(normalized_img).float().unsqueeze(0)
             normalized_label_img = torch.from_numpy(normalized_label_img).float().unsqueeze(0)
             mask = torch.from_numpy(mask).float().unsqueeze(0)
-            box_size = torch.tensor(box_size)
+            box_size = torch.tensor(box_size).float()
             com = torch.from_numpy(com).float()
             
             return normalized_img, normalized_label_img, mask, box_size, com
@@ -288,7 +288,7 @@ class HandDataset(torch.utils.data.Dataset):
         normalized_img = torch.from_numpy(normalized_img).float().unsqueeze(0)
         normalized_label_img = torch.from_numpy(normalized_label_img).float().unsqueeze(0)
         mask = torch.from_numpy(mask).float().unsqueeze(0)
-        box_size = torch.tensor(box_size)
+        box_size = torch.tensor(box_size).float()
         com = torch.from_numpy(com).float()
         normalized_uvd = torch.from_numpy(normalized_uvd).float()
         heatmaps = torch.from_numpy(heatmaps).float().permute(2, 0, 1).contiguous()
