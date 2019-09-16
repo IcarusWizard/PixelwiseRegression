@@ -36,7 +36,7 @@ if __name__ == '__main__':
     parser.add_argument('--steps', type=int, default=30000)
     parser.add_argument("--num_workers", type=int, default=9999)
     parser.add_argument('--stages', type=int, default=2)
-    parser.add_argument('--features', type=int, default=256)
+    parser.add_argument('--features', type=int, default=128)
     parser.add_argument('--level', type=int, default=4)
     parser.add_argument('--log_step', type=int, default=500)
     parser.add_argument('--save_step', type=int, default=10000)
