@@ -132,6 +132,16 @@ class HandDataset(torch.utils.data.Dataset):
         """
         raise NotImplementedError()
 
+    def check_text(self, text):
+        """
+            A helper function to check the dataset
+        """
+        try:
+            self.process_single_data(text)
+            return text
+        except:
+            return False
+
     def load_from_text(self, text):
         """
         This function decode the text and load the image with only hand and the uvd coordinate of joints
@@ -312,13 +322,6 @@ class MSRADataset(HandDataset):
         Thumb = [0, 17, 18, 19, 20]
         self.config = [Thumb, Index, Mid, Ring, Small]
 
-    def check_text(self, text):
-        try:
-            self.process_single_data(text)
-            return text
-        except:
-            return False
-
     def build_data(self):
         if self.data_ready:
             print("Data is Already build~")
@@ -414,75 +417,14 @@ class ICVLDataset(HandDataset):
         Thumb = [0, 1, 2, 3]
         self.config = [Thumb, Index, Mid, Ring, Small]
 
-    def _build_bin(self, input_name, output_name, center, threshold):
-        try:
-            image = plt.imread(input_name) * 65535
-        except:
-            return False
-        Mask = floodFillDepth(image, center, threshold)
-        image = image * Mask
-        index = np.argwhere(image > 0)
-        top, left = np.min(index, axis=0)
-        bottum, right = np.max(index, axis=0) + 1
-        # write the bin file
-        with open(output_name, 'wb') as f:
-            data = struct.pack('i', 320)
-            f.write(data)
-            data = struct.pack('i', 240)
-            f.write(data)
-            data = struct.pack('i', left)
-            f.write(data)
-            data = struct.pack('i', top)
-            f.write(data)
-            data = struct.pack('i', right)
-            f.write(data)
-            data = struct.pack('i', bottum)
-            f.write(data)
-            for i in range(top, bottum):
-                for j in range(left, right):
-                    data = struct.pack('f', image[i, j])
-                    f.write(data)
-        return True
-
     def build_data(self):
         if self.data_ready:
             print("Data is Already build~")
             return
-        pool = mp.Pool(processes=os.cpu_count())
-        findname = re.compile(r'(.*)/(.*).png')
-        if not os.path.exists(os.path.join(self.path, "train.txt")):
-            with open(os.path.join(self.path, "Training", "labels.txt"), 'r') as f:
-                train_line = f.readlines()
-            training_set = []
-            os.mkdir(os.path.join(self.path, "Training", "bin"))
-            processing = []
-            for line in train_line:
-                line = line.strip()
-                words = line.split()
-                path = words[0]
-                words = words[1:]
-                if len(path.split('/')) > 2:
-                    # Enhanced Image
-                    continue
-                name = findname.findall(path)[0]
-                name = os.path.join(self.path, "Training", "bin", "{}_{}.bin".format(name[0], name[1]))
-                center = (int(float(words[1])), int(float(words[0])))
-                r = pool.apply_async(self._build_bin, (os.path.join(self.path, "Training", "Depth", path), name, center, 20, ))
-                # self._build_bin(os.path.join(self.path, "Training", "Depth", path), name, center)
-                words = [name] + words
-                processing.append((r, words))
-
-            for r, words in processing:
-                if r.get():
-                    training_set.append(" ".join(words))
-
-            with open(os.path.join(self.path, "train.txt"), 'w') as f:
-                f.write("\n".join(training_set))
 
         if not os.path.exists(os.path.join(self.path, "test.txt")):
-            os.mkdir(os.path.join(self.path, "Testing", "bin"))
+            print("building text.txt ...")
             test_set = []
-            processing = []
             with open(os.path.join(self.path, "Testing", "test_seq_1.txt"), "r") as f:
                 lines = f.readlines()
             test_line = [line.strip() for line in lines if not line == "\n"]
@@ -490,19 +432,10 @@ class ICVLDataset(HandDataset):
                 words = line.split()
                 path = words[0]
                 words = words[1:]
-                name = findname.findall(path)[0]
-                name = os.path.join(self.path, "Testing", "bin", "seq1_{}.bin".format(name[1]))
-                center = (int(float(words[1])), int(float(words[0])))
-                r = pool.apply_async(self._build_bin, (os.path.join(self.path, "Testing", "Depth", path), name, center, 10))
-                # self._build_bin(os.path.join(self.path, "Testing", "Depth", path), name, center)
+                name = os.path.join(self.path, "Testing", "Depth", path)
                 words = [name] + words
-                processing.append((r, words))
+                test_set.append(" ".join(words))
 
-            for r, words in processing:
-                if r.get():
-                    test_set.append(" ".join(words)) 
-            
-            processing = []
             with open(os.path.join(self.path, "Testing", "test_seq_2.txt"), "r") as f:
                 lines = f.readlines()
             test_line = [line.strip() for line in lines if not line == "\n"]
@@ -510,46 +443,83 @@ class ICVLDataset(HandDataset):
                 words = line.split()
                 path = words[0]
                 words = words[1:]
-                name = findname.findall(path)[0]
-                name = os.path.join(self.path, "Testing", "bin", "seq2_{}.bin".format(name[1]))
-                center = (int(float(words[1])), int(float(words[0])))
-                r = pool.apply_async(self._build_bin, (os.path.join(self.path, "Testing", "Depth", path), name, center, 10))
-                # self._build_bin(os.path.join(self.path, "Testing", "Depth", path), name, center)
+                name = os.path.join(self.path, "Testing", "Depth", path)
                 words = [name] + words
-                processing.append((r, words))
+                test_set.append(" ".join(words))
 
-            for r, words in processing:
-                if r.get():
-                    test_set.append(" ".join(words)) 
-
+            print("saving text.txt ...")
             with open(os.path.join(self.path, "test.txt"), 'w') as f:
                 f.write("\n".join(test_set))
 
-        pool.close()
-        pool.join()
-                
-    def build_all_test(self):
-        if not self.data_ready:
-            self.build_data()
-        f1 = open(os.path.join(self.path, "train.txt"), 'r')
-        f2 = open(os.path.join(self.path, "test.txt"), 'r')
-        text = f1.read() + "\n" + f2.read()
-        with open(os.path.join(self.path, "all_test.txt"), 'w') as f:
-            f.write(text)
-        f1.close()
-        f2.close()
+        if not os.path.exists(os.path.join(self.path, "train.txt")):
+            print("building text.txt ...")
+
+            datatexts = []
+            with open(os.path.join(self.path, "Training", "labels.txt"), 'r') as f:
+                train_line = f.readlines()
+
+            for line in train_line:
+                words = line.split()
+                path = words[0]
+                words = words[1:]
+                name = os.path.join(self.path, "Training", "Depth", path)
+                words = [name] + words
+                datatexts.append(" ".join(words))
+
+            print('checking data ......')
+
+            pool = mp.Pool(processes=os.cpu_count())
+            processing = []
+            for text in datatexts:
+                r = pool.apply_async(self.check_text, (text, ))
+                processing.append(r)
+
+            traintxt = []
+            with tqdm(total=len(datatexts)) as pbar:
+                for r in processing:
+                    text = r.get()
+                    if text:
+                        traintxt.append(text)
+                    pbar.update(1)
+            pool.close()
+            
+            print('{} / {} data can use to train'.format(len(traintxt), len(datatexts)))
+            with open(os.path.join(self.path, "train.txt"), 'w') as f:
+                f.write("\n".join(traintxt))
         
     def load_from_text(self, text):
         """
-        This function decode the text and load the image with only hand and the uvd coordinate of joints
-        OUTPUT:
-            image, uvd
+            This function decode the text and load the image with only hand and the uvd coordinate of joints
+            OUTPUT:
+                image, uvd
         """
         path, joint_uvd = super().decode_line_txt(text)
-        img, left, top, right, bottom = load_bin(path)
 
-        image = np.zeros((self.halfv * 2, self.halfu * 2))
-        image[top:bottom, left:right] = img.copy()
+        try:
+            image = plt.imread(path) * 65535
+        except:
+            print("{} do not exist!")
+            raise ValueError("file do not exist")
+
+        # crop the image by boundary box
+        uv = joint_uvd[:, :2]
+        left, top = np.min(uv, axis=0) - 20
+        right, buttom = np.max(uv, axis=0) + 20
+        left = max(int(left), 0)
+        top = max(int(top), 0)
+        right = min(int(right), 320)
+        buttom = min(int(buttom), 240)
+        MM = np.zeros(image.shape)
+        MM[top:buttom, left:right] = 1
+        image = image * MM
+
+        # remove the background in the boundary box
+        depth = joint_uvd[:, 2]
+        depth_max = np.max(depth)
+        depth_min = np.min(depth)
+        image[image > depth_max + 50] = 0
+        image[image < depth_min - 50] = 0
+
         return image, joint_uvd
 
 class NYUDataset(HandDataset):
