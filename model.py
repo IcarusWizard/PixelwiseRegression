@@ -181,3 +181,94 @@ class PixelwiseRegression(torch.nn.Module):
             f = torch.cat([f, heatmaps, depthmaps, label_img], dim=1)
 
         return results # list of tuple
+
+# --------------------------------------------------------------------------------- #
+#                        Below code is only for ablation                            #
+# --------------------------------------------------------------------------------- #
+class FullRegressionBlock(torch.nn.Module):
+    def __init__(self, in_dim, joints, label_size=64, features=256, level=4):
+        super(FullRegressionBlock, self).__init__()
+        self.conv = torch.nn.Conv2d(in_dim, features, 1, stride=1, padding=0)
+
+        self.hourglass = Hourglass(features, level)
+
+        self.flatten_dim = label_size ** 2 * features // 64
+        self.joints = joints
+
+        self.downsampling = torch.nn.Sequential(
+            torch.nn.Conv2d(features, features, 3, stride=2, padding=1),
+            torch.nn.BatchNorm2d(features),
+            torch.nn.ReLU(True),
+            torch.nn.Conv2d(features, features, 3, stride=2, padding=1),
+            torch.nn.BatchNorm2d(features),
+            torch.nn.ReLU(True),
+            torch.nn.Conv2d(features, features, 3, stride=2, padding=1),
+            torch.nn.BatchNorm2d(features),
+            torch.nn.ReLU(True)
+        )
+
+        self.regression = torch.nn.Sequential(
+            torch.nn.Linear(self.flatten_dim, 1024),
+            torch.nn.ReLU(True),
+            torch.nn.Linear(1024, 512),
+            torch.nn.ReLU(True),
+            torch.nn.Linear(512, 256),
+            torch.nn.ReLU(True),
+            torch.nn.Linear(256, joints * 3)
+        )
+
+    def forward(self, x, label_img, mask):
+        f = self.hourglass(self.conv(x))
+
+        downsampled_f = self.downsampling(f)
+        downsampled_f = downsampled_f.view(-1, self.flatten_dim)
+
+        coordinates = self.regression(downsampled_f)
+
+        coordinates = coordinates.view(-1, self.joints, 3)
+
+        return f, coordinates
+
+class FullRegression(torch.nn.Module):
+    def __init__(self, joints, stage=2, label_size=64, features=256, level=4):
+        super(FullRegression, self).__init__()
+        init_conv = [
+            torch.nn.Conv2d(1, 32, 3, stride=1, padding=1),
+            torch.nn.BatchNorm2d(32),
+            torch.nn.ReLU(True)
+        ]
+
+        conv_features = 32
+        while conv_features < features:
+            init_conv.extend([
+                torch.nn.Conv2d(conv_features, 2 * conv_features, 3, stride=1, padding=1),
+                torch.nn.BatchNorm2d(2 * conv_features),
+                torch.nn.ReLU(True)
+            ])
+            conv_features *= 2
+
+        init_conv.extend([
+            torch.nn.Conv2d(features, features, 3, stride=2, padding=1),
+            torch.nn.BatchNorm2d(features),
+            torch.nn.ReLU(True)
+        ])
+
+        self.conv = torch.nn.Sequential(*init_conv)
+
+        concat_dim = features + 1
+        stage_list = [
+            FullRegressionBlock(features if i == 0 else concat_dim, joints, label_size, features) for i in range(stage)
+        ]
+
+        self.stages = torch.nn.ModuleList(stage_list)
+
+    def forward(self, img, label_img, mask):
+        f = self.conv(img)
+
+        results = []
+        for stage in self.stages:
+            f, uvd = stage(f, label_img, mask)
+            results.append(uvd)
+            f = torch.cat([f, label_img], dim=1)
+
+        return results # list of tuple
