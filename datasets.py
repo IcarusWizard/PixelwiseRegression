@@ -498,7 +498,7 @@ class ICVLDataset(HandDataset):
         try:
             image = plt.imread(path) * 65535
         except:
-            print("{} do not exist!")
+            print("{} do not exist!".format(path))
             raise ValueError("file do not exist")
 
         # crop the image by boundary box
@@ -685,72 +685,51 @@ class HAND17Dataset(HandDataset):
         Thumb = [0, 1, 6, 7, 8]
         self.config = [Thumb, Index, Mid, Ring, Small]
 
-    def _build_bin(self, input_name, output_name, center, threshold, uvd):
-        try:
-            _image = plt.imread(input_name)
-        except:
-            return False
-        image = _image * 65535
-        uv = uvd[:, :2]
-        left, top = np.min(uv, axis=0) - 20
-        right, buttom = np.max(uv, axis=0) + 20
-        left = max(int(left), 0)
-        top = max(int(top), 0)
-        right = min(int(right), 640)
-        buttom = min(int(buttom), 480)
-        MM = np.zeros(image.shape)
-        MM[top:buttom, left:right] = 1
-        image = image * MM
-        
-        depth = uvd[:, 2]
-        depth_max = np.max(depth)
-        depth_min = np.min(depth)
-        image[image > depth_max + 50] = 0
-        image[image < depth_min - 50] = 0
-
-        # Mask = floodFillDepth(image, center, threshold)
-        # if np.sum(Mask) > 200:
-        #     image = image * Mask
-        index = np.argwhere(image > 0)
-        top, left = np.min(index, axis=0)
-        bottum, right = np.max(index, axis=0) + 1
-        # write the bin file
-        with open(output_name, 'wb') as f:
-            data = struct.pack('i', 640)
-            f.write(data)
-            data = struct.pack('i', 480)
-            f.write(data)
-            data = struct.pack('i', left)
-            f.write(data)
-            data = struct.pack('i', top)
-            f.write(data)
-            data = struct.pack('i', right)
-            f.write(data)
-            data = struct.pack('i', bottum)
-            f.write(data)
-            for i in range(top, bottum):
-                for j in range(left, right):
-                    data = struct.pack('f', image[i, j])
-                    f.write(data)
-        return True
-
     def build_data(self):
         if self.data_ready:
             print("Data is Already build~")
             return
-        raise Exception("Data txt file do not exist, Please copy the file to the HAND17 root folder and rename them to train.txt and test.txt")
 
+        print('building test data ......')
+        with open(os.path.join(self.path, frame, 'BoundingBox.txt'), 'r') as f:
+            test_text = f.read()
+
+        with open(os.path.join(self.path, 'test.txt'), 'w') as f:
+            f.write(test_text)
+
+        print('checking train data ......')
+        with open(os.path.join(self.path, frame, 'BoundingBox.txt'), 'r') as f:
+            datatexts = f.readlines()
+
+        pool = mp.Pool(processes=os.cpu_count())
+        processing = []
+        for text in datatexts:
+            r = pool.apply_async(self.check_text, (text, ))
+            processing.append(r)
+
+        traintxt = []
+        with tqdm(total=len(datatexts)) as pbar:
+            for r in processing:
+                text = r.get()
+                if text:
+                    traintxt.append(text)
+                pbar.update(1)
+        pool.close()
+        
+        print('{} / {} data can use to train'.format(len(traintxt), len(datatexts)))
+        with open(os.path.join(self.path, "train.txt"), 'w') as f:
+            f.writelines(traintxt)
         
     def load_from_text(self, text):
         """
-        This function decode the text and load the image with only hand and the uvd coordinate of joints
-        OUTPUT:
-            image, uvd
+            This function decode the text and load the image with only hand and the uvd coordinate of joints
+            OUTPUT:
+                image, uvd
         """
         path, joint_xyz = super().decode_line_txt(text)
         joint_uvd = self.xyz2uvd(joint_xyz)
 
-        image = plt.imread(os.path.join(self.path, 'Train', 'images', path)) * 65535
+        image = plt.imread(os.path.join(self.path, 'training', 'images', path)) * 65535
 
         # crop the image by boundary box
         uv = joint_uvd[:, :2]
@@ -779,7 +758,7 @@ class HAND17Dataset(HandDataset):
         path = l[0]
         ustart, vstart, du, dv = map(float, l[1:])
 
-        image = plt.imread(os.path.join(self.path, 'Test', 'images', path)) * 65535
+        image = plt.imread(os.path.join(self.path, 'frame', 'images', path)) * 65535
 
         # crop the image by boundary box
         MM = np.zeros(image.shape)
