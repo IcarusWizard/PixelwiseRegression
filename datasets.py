@@ -297,7 +297,7 @@ class HandDataset(torch.utils.data.Dataset):
         return normalized_img, normalized_label_img, mask, box_size, com, normalized_uvd, heatmaps, normalized_Dmap        
 
 class MSRADataset(HandDataset):
-    def __init__(self, fx = 241.42, fy = 241.42, halfu = 160, halfv = 120, path="data/MSRA", 
+    def __init__(self, fx = 241.42, fy = 241.42, halfu = 160, halfv = 120, path="Data/MSRA", 
                 sigmoid=1.5, image_size=128, kernel_size=7,
                 label_size=64, test_only=False, using_rotation=False, using_scale=False, using_flip=False, 
                 scale_factor=50000, threshold=200, joint_number=21, dataset='train'):

@@ -20,7 +20,7 @@ PyTorch >= 1.0
 tensorboard (install by `pip install tb-nightly`)
 
 ## Dataset  
-All datasets should be placed in `./data` folder.  
+All datasets should be placed in `./Data` folder.  
 ### MSRA  
 1. Download the dataset from [dropbox](https://www.dropbox.com/s/bmx2w0zbnyghtp7/cvpr15_MSRAHandGestureDB.zip?dl=0).
 2. Unzip the files to `./data` and rename the folder as `MSRA`.
