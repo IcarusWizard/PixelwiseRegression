@@ -691,14 +691,14 @@ class HAND17Dataset(HandDataset):
             return
 
         print('building test data ......')
-        with open(os.path.join(self.path, frame, 'BoundingBox.txt'), 'r') as f:
+        with open(os.path.join(self.path, 'frame', 'BoundingBox.txt'), 'r') as f:
             test_text = f.read()
 
         with open(os.path.join(self.path, 'test.txt'), 'w') as f:
             f.write(test_text)
 
         print('checking train data ......')
-        with open(os.path.join(self.path, frame, 'BoundingBox.txt'), 'r') as f:
+        with open(os.path.join(self.path, 'training', 'Training_Annotation.txt'), 'r') as f:
             datatexts = f.readlines()
 
         pool = mp.Pool(processes=os.cpu_count())
