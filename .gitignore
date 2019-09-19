@@ -5,3 +5,4 @@ Model/*
 .vscode/
 Result/*.txt
 *.pyc
+nohup.out
