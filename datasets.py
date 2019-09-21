@@ -643,17 +643,6 @@ class NYUDataset(HandDataset):
 
         pool.close()
         pool.join()
-                
-    def build_all_test(self):
-        if not self.data_ready:
-            self.build_data()
-        f1 = open(os.path.join(self.path, "train.txt"), 'r')
-        f2 = open(os.path.join(self.path, "test.txt"), 'r')
-        text = f1.read() + "\n" + f2.read()
-        with open(os.path.join(self.path, "all_test.txt"), 'w') as f:
-            f.write(text)
-        f1.close()
-        f2.close()
         
     def load_from_text(self, text):
         """

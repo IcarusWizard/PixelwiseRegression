@@ -30,14 +30,7 @@ if __name__ == '__main__':
     parser.add_argument('--stages', type=int, default=2)
     parser.add_argument('--features', type=int, default=128)
     parser.add_argument('--level', type=int, default=4)
-    parser.add_argument('--log_step', type=int, default=500)
-    parser.add_argument('--save_step', type=int, default=10000)
     parser.add_argument('--seed', type=str, default='final')
-
-    parser.add_argument('--lr', type=float, default=2e-4)
-    parser.add_argument("--lambda_h", type=float, default=100.0)
-    parser.add_argument('--lambda_d', type=float, default=0.1)
-    parser.add_argument('--alpha', type=float, default=0.5)
 
     args = parser.parse_args()
 
@@ -103,11 +96,33 @@ if __name__ == '__main__':
 
             _uvd = _uvd.cpu()
             _uvd = recover_uvd(_uvd, box_size, com, threshold)
-            pre_uvd.append(_uvd.view(-1, joints * 3))
+            _uvd = _uvd.numpy()
+
+            if args.dataset == 'HAND17':
+                _uvd = testset.uvd2xyz(_uvd)
+
+            pre_uvd.append(_uvd.reshape(-1, joints * 3))
 
             pbar.update(1)
         
-        pre_uvd = torch.cat(pre_uvd, dim=0)
-        pre_uvd = pre_uvd.numpy()
+        pre_uvd = np.concatenate(pre_uvd, axis=0)
 
-        np.savetxt("Result/{}_{}.txt".format(args.dataset, args.suffix), pre_uvd, fmt="%.3f")
+        if args.seed == 'final':
+            result_name = "Result/{}_{}.txt".format(args.dataset, args.suffix)
+        else:
+            result_name = "Result/{}_{}_{}.txt".format(args.dataset, args.suffix, args.seed)
+
+        np.savetxt(result_name, pre_uvd, fmt="%.3f")
+
+        if args.dataset == 'HAND17':
+            with open(result_name, 'r') as f:
+                datatext = f.readlines()
+
+        savetext = []
+        for index, text in enumerate(datatext):
+            text = text.strip()
+            fragment = ['frame\\images\\image_D%08d.png'%(index+1)] + text.split()
+            savetext.append("\t".join(fragment))
+
+        with open(result_name, 'w') as f:
+            f.write('\n'.join(savetext))
