@@ -7,6 +7,7 @@ from matplotlib.font_manager import FontProperties
 from matplotlib import rc
 from queue import Queue
 import torch
+import random
 
 font = FontProperties()
 font.set_family('serif')
@@ -63,8 +64,11 @@ def generate_heatmap(img_size, u, v):
 def generate_kernel(heatmap, kernel_size = 3, sigmoid = 1.5):
     return cv2.GaussianBlur(heatmap, (kernel_size, kernel_size), sigmoid)
 
-def random_rotated(img, uvd):
+def random_rotated(_img, _uvd):
     # random rotated the img within -30 ~ 30
+    img = _img.copy()
+    uvd = _uvd.copy()
+
     angle = random.random() * 60 - 30
     size = img.shape[0]
     M = cv2.getRotationMatrix2D((size // 2, size // 2), angle, 1.0)

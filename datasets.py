@@ -38,9 +38,10 @@ class HandDataset(torch.utils.data.Dataset):
         self.process_mode = process_mode    # the processing mode used in processing single data (uvd or bb)
         self.dataset = dataset
 
+        self.augmentation = self.using_flip or self.using_scale or self.using_rotation
+
         if self.test_only:
-            assert not (self.using_flip or self.using_scale or self.using_rotation), \
-                "you can not transform the test data"
+            assert not self.augmentation, "you can not transform the test data"
 
         self.build_data()
 
@@ -252,32 +253,55 @@ class HandDataset(torch.utils.data.Dataset):
         joint_uvd_centered_resize = joint_uvd_centered.copy()
         joint_uvd_centered_resize[:,:2] = joint_uvd_centered_resize[:,:2] / (box_size - 1) * (self.image_size - 1)
 
-        if self.using_rotation:
-            # random rotated the image and the label
-            img_resize, joint_uvd_centered_resize = random_rotated(img_resize, joint_uvd_centered_resize)
+        # TODO: there must be some neat ways to implement the augmentation
+        if self.augmentation:
+            # perform data augmentation
+            if self.using_rotation:
+                # random rotate the image and the label
+                _img_resize, _joint_uvd_centered_resize = random_rotated(img_resize, joint_uvd_centered_resize)
 
-        # Generate Heatmap
-        joint_uvd_kernel = joint_uvd_centered_resize.copy()
-        joint_uvd_kernel[:,:2] = joint_uvd_kernel[:,:2] / (self.image_size - 1) * (self.label_size - 1) + np.array([self.label_size // 2, self.label_size // 2])
-        try:
-            heatmaps = [generate_kernel(generate_heatmap(self.label_size, joint_uvd_kernel[i, 0], joint_uvd_kernel[i, 1]), kernel_size=self.kernel_size, sigmoid=self.sigmoid)[:, :, np.newaxis] for i in range(self.joint_number)]
-        except:
-            path, _ = self.decode_line_txt(text)
-            print("{} heatmap error".format(path))
-            raise ValueError("{} heatmap error".format(path))
+            # Generate Heatmap
+            joint_uvd_kernel = _joint_uvd_centered_resize.copy()
+            joint_uvd_kernel[:,:2] = joint_uvd_kernel[:,:2] / (self.image_size - 1) * (self.label_size - 1) + \
+                np.array([self.label_size // 2, self.label_size // 2])
 
-        heatmaps = np.concatenate(heatmaps, axis=2)
+            try:
+                # try generate heatmaps with augmented data, which may fail
+                heatmaps = [generate_kernel(generate_heatmap(self.label_size, joint_uvd_kernel[i, 0], joint_uvd_kernel[i, 1]), \
+                    kernel_size=self.kernel_size, sigmoid=self.sigmoid)[:, :, np.newaxis] for i in range(self.joint_number)]
+                # the augmentation is proved ok, so use the augmented version
+                img_resize = _img_resize
+                joint_uvd_centered_resize = _joint_uvd_centered_resize
+            except:
+                # back to original data, do not augment
+                joint_uvd_kernel = joint_uvd_centered_resize.copy()
+                joint_uvd_kernel[:,:2] = joint_uvd_kernel[:,:2] / (self.image_size - 1) * (self.label_size - 1) + \
+                    np.array([self.label_size // 2, self.label_size // 2])
+                heatmaps = [generate_kernel(generate_heatmap(self.label_size, joint_uvd_kernel[i, 0], joint_uvd_kernel[i, 1]), \
+                    kernel_size=self.kernel_size, sigmoid=self.sigmoid)[:, :, np.newaxis] for i in range(self.joint_number)]
+
+            heatmaps = np.concatenate(heatmaps, axis=2)
+            
+        else:
+            # Generate Heatmap
+            joint_uvd_kernel = joint_uvd_centered_resize.copy()
+            joint_uvd_kernel[:,:2] = joint_uvd_kernel[:,:2] / (self.image_size - 1) * (self.label_size - 1) + \
+                np.array([self.label_size // 2, self.label_size // 2])
+            try:
+                heatmaps = [generate_kernel(generate_heatmap(self.label_size, joint_uvd_kernel[i, 0], joint_uvd_kernel[i, 1]), \
+                    kernel_size=self.kernel_size, sigmoid=self.sigmoid)[:, :, np.newaxis] for i in range(self.joint_number)]
+            except:
+                path, _ = self.decode_line_txt(text)
+                print("{} heatmap error".format(path))
+                raise ValueError("{} heatmap error".format(path))
+
+            heatmaps = np.concatenate(heatmaps, axis=2)
 
         # Generate Dmap
         Dmap = []
         for i in range(self.joint_number):
             heatmask = heatmaps[:, :, i] > 0
             heatmask = heatmask.astype(float) * mask
-            # # Only use below code when facing NAN problem
-            # if np.sum(heatmask) == 0:
-            #     # Heatmap don't on hand may creat an error
-            #     print("heatmap don't on hand")
-            #     return None, None, None, None, None, None, None, None
             Dmap.append(((joint_uvd_centered_resize[i, 2] - label_image.copy()) * heatmask)[:, :, np.newaxis])
         Dmap = np.concatenate(Dmap, axis=2)   
 
@@ -289,7 +313,9 @@ class HandDataset(torch.utils.data.Dataset):
         normalized_uvd[:, :2] = normalized_uvd[:, :2] / (self.image_size - 1)
         normalized_uvd[:, 2] = normalized_uvd[:, 2] / self.threshold
         
-        if np.any(np.isnan(normalized_img)) or np.any(np.isnan(normalized_uvd)) or np.any(np.isnan(heatmaps)) or np.any(np.isnan(normalized_label_img)) or np.any(np.isnan(normalized_Dmap)) or np.any(np.isnan(mask)) or np.sum(mask) < 10:
+        if np.any(np.isnan(normalized_img)) or np.any(np.isnan(normalized_uvd)) or \
+            np.any(np.isnan(heatmaps)) or np.any(np.isnan(normalized_label_img)) or \
+                np.any(np.isnan(normalized_Dmap)) or np.any(np.isnan(mask)) or np.sum(mask) < 10:
             path, data = self.decode_line_txt(text)
             print("Wired things happen, image contain Nan {}, {}".format(path, np.sum(mask)))
             raise ValueError("Wired things happen, image contain Nan {}, {}".format(path, np.sum(mask)))
