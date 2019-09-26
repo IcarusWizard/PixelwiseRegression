@@ -73,9 +73,15 @@ class PlaneRegression(torch.nn.Module):
 
         B, J, H, W = heatmaps.shape
 
-        heatmaps = heatmaps.view(B, J, -1)
-        heatmaps = F.softmax(heatmaps, dim=2)
-        heatmaps = heatmaps.view(B, J, H, W)
+        # # use softmax to normalize heatmap
+        # heatmaps = heatmaps.view(B, J, -1)
+        # heatmaps = F.softmax(heatmaps, dim=2)
+        # heatmaps = heatmaps.view(B, J, H, W)
+
+        # use sum to normalize heatmap
+        heatmaps = F.relu(heatmaps, inplace=True)
+        heatmaps = heatmaps + 1e-14 # prevent all zero heatmap
+        heatmaps = heatmaps / heatmaps.sum(dim=(2, 3), keepdim=True)
 
         u = torch.sum(self.filter[0].view(1, 1, H, W) * heatmaps, dim=(2, 3)).unsqueeze(-1)
         v = torch.sum(self.filter[1].view(1, 1, H, W) * heatmaps, dim=(2, 3)).unsqueeze(-1)
