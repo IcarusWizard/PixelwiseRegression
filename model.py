@@ -47,7 +47,8 @@ class Hourglass(torch.nn.Module):
         return h
 
 class PlaneRegression(torch.nn.Module):
-    def __init__(self, features, joints, label_size, inplace=True):
+    def __init__(self, features, joints, label_size, inplace=True, normalization_method='softmax'):
+        self.normalization_method = normalization_method
         super(PlaneRegression, self).__init__()
         self.conv = torch.nn.Sequential(
             torch.nn.Conv2d(features, features, 3, stride=1, padding=1),
@@ -73,15 +74,16 @@ class PlaneRegression(torch.nn.Module):
 
         B, J, H, W = heatmaps.shape
 
-        # # use softmax to normalize heatmap
-        # heatmaps = heatmaps.view(B, J, -1)
-        # heatmaps = F.softmax(heatmaps, dim=2)
-        # heatmaps = heatmaps.view(B, J, H, W)
-
-        # use sum to normalize heatmap
-        heatmaps = F.relu(heatmaps, inplace=True)
-        heatmaps = heatmaps + 1e-14 # prevent all zero heatmap
-        heatmaps = heatmaps / heatmaps.sum(dim=(2, 3), keepdim=True)
+        if self.normalization_method == 'softmax':
+            # use softmax to normalize heatmap
+            heatmaps = heatmaps.view(B, J, -1)
+            heatmaps = F.softmax(heatmaps, dim=2)
+            heatmaps = heatmaps.view(B, J, H, W)
+        else:
+            # use sum to normalize heatmap
+            heatmaps = F.relu(heatmaps, inplace=True)
+            heatmaps = heatmaps + 1e-14 # prevent all zero heatmap
+            heatmaps = heatmaps / heatmaps.sum(dim=(2, 3), keepdim=True)
 
         u = torch.sum(self.filter[0].view(1, 1, H, W) * heatmaps, dim=(2, 3)).unsqueeze(-1)
         v = torch.sum(self.filter[1].view(1, 1, H, W) * heatmaps, dim=(2, 3)).unsqueeze(-1)
@@ -126,13 +128,13 @@ class DepthRegression(torch.nn.Module):
         return depthmaps, depth_coordinates
 
 class PredictionBlock(torch.nn.Module):
-    def __init__(self, in_dim, joints, label_size=64, features=256, level=4):
+    def __init__(self, in_dim, joints, label_size=64, features=256, level=4, heatmap_method='softmax'):
         super(PredictionBlock, self).__init__()
         self.conv = torch.nn.Conv2d(in_dim, features, 1, stride=1, padding=0)
 
         self.hourglass = Hourglass(features, level)
 
-        self.plane_regression = PlaneRegression(features, joints, label_size)
+        self.plane_regression = PlaneRegression(features, joints, label_size, normalization_method=heatmap_method)
         self.depth_regression = DepthRegression(features, joints)
 
     def forward(self, x, label_img, mask):
@@ -145,7 +147,7 @@ class PredictionBlock(torch.nn.Module):
         return f, heatmaps, depthmaps, torch.cat([plane_coordinates, depth_coordinates], dim=2)
 
 class PixelwiseRegression(torch.nn.Module):
-    def __init__(self, joints, stage=2, label_size=64, features=256, level=4):
+    def __init__(self, joints, stage=2, label_size=64, features=256, level=4, heatmap_method='softmax'):
         super(PixelwiseRegression, self).__init__()
         init_conv = [
             torch.nn.Conv2d(1, 32, 3, stride=1, padding=1),
@@ -172,7 +174,8 @@ class PixelwiseRegression(torch.nn.Module):
 
         concat_dim = features + 2 * joints + 1
         stage_list = [
-            PredictionBlock(features if i == 0 else concat_dim, joints, label_size, features) for i in range(stage)
+            PredictionBlock(features if i == 0 else concat_dim, joints, label_size, \
+                features, level, heatmap_method=heatmap_method) for i in range(stage)
         ]
 
         self.stages = torch.nn.ModuleList(stage_list)

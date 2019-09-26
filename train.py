@@ -28,6 +28,7 @@ if __name__ == '__main__':
     parser.add_argument('--label_size', type=int, default=64)
     parser.add_argument('--kernel_size', type=int, default=7)
     parser.add_argument('--sigmoid', type=float, default=1.5)
+    parser.add_argument('--heatmap_method', type=str, default='softmax')
     parser.add_argument('--using_rotation', action='store_true')
     parser.add_argument('--using_scale', action='store_true')
     parser.add_argument('--using_flip', action='store_true')
@@ -86,6 +87,7 @@ if __name__ == '__main__':
         "label_size" : args.label_size, 
         "features" : args.features, 
         "level" : args.level,
+        "heatmap_method" : args.heatmap_method,
     }
 
     log_name = "{}_{}".format(args.dataset, args.suffix)
