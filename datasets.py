@@ -488,6 +488,9 @@ class ICVLDataset(HandDataset):
                 words = line.split()
                 path = words[0]
                 words = words[1:]
+                if len(path.split('/')) > 2:
+                    # this is the augmented data
+                    continue
                 name = os.path.join(self.path, "Training", "Depth", path)
                 words = [name] + words
                 datatexts.append(" ".join(words))
