@@ -120,11 +120,11 @@ if __name__ == '__main__':
             with open(result_name, 'r') as f:
                 datatext = f.readlines()
 
-        savetext = []
-        for index, text in enumerate(datatext):
-            text = text.strip()
-            fragment = ['frame\\images\\image_D%08d.png'%(index+1)] + text.split()
-            savetext.append("\t".join(fragment))
+            savetext = []
+            for index, text in enumerate(datatext):
+                text = text.strip()
+                fragment = ['frame\\images\\image_D%08d.png'%(index+1)] + text.split()
+                savetext.append("\t".join(fragment))
 
-        with open(result_name, 'w') as f:
-            f.write('\n'.join(savetext))
+            with open(result_name, 'w') as f:
+                f.write('\n'.join(savetext))
