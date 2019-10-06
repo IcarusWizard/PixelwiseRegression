@@ -75,7 +75,7 @@ if __name__ == '__main__':
     }
 
     val_loader_parameters = {
-        "batch_size" : 4 * args.batch_size,
+        "batch_size" : args.batch_size,
         "shuffle" : False,
         "pin_memory" : True, 
         "drop_last" : False,
