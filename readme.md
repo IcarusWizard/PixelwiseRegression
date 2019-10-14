@@ -29,7 +29,7 @@ All datasets should be placed in `./Data` folder.
 ### ICVL  
 1. Download the dataset from [here](https://labicvl.github.io/hand.html).  
 2. Extract `Training.tar.gz` and `Testing.tar.gz` to `./Data/ICVL/Training` and `./Data/ICVL/Testing` respectively.
-3. Download the default [train.txt](https://drive.google.com/open?id=1CmKpM9KEO86mIhOP_flWF2NcR9H99CNJ) and [test.txt](https://drive.google.com/open?id=1ucn9QjyRBL9463ihC2qt60uetXUSkeJQ) from Google Drive. In our default setting, 330885 out of 331006 frames are valid for training. If you don't want to use our default setting, feel free to change the parameters in `datasets.py`, and run `python check_dataset.py --dataset ICVL` to build the data files.
+3. Download the default [train.txt](https://drive.google.com/open?id=1xuIr5hAJFEu1dIEuzXm6yiOCxA6DHDDA) and [test.txt](https://drive.google.com/open?id=1ucn9QjyRBL9463ihC2qt60uetXUSkeJQ) from Google Drive. In our default setting, 22059 out of 22068 frames are valid for training. If you don't want to use our default setting, feel free to change the parameters in `datasets.py`, and run `python check_dataset.py --dataset ICVL` to build the data files.
 
 ### HAND17  
 1. Ask for the permission from the author of the dataset and download.  
