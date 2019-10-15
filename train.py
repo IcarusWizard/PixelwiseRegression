@@ -29,7 +29,7 @@ if __name__ == '__main__':
     parser.add_argument('--kernel_size', type=int, default=7)
     parser.add_argument('--sigmoid', type=float, default=1.5)
     parser.add_argument('--norm_method', type=str, default='batch', help='choose from batch and instance')
-    parser.add_argument('--heatmap_method', type=str, default='softmax')
+    parser.add_argument('--heatmap_method', type=str, default='softmax', help='choose from softmax and origin')
     parser.add_argument('--using_rotation', action='store_true')
     parser.add_argument('--using_scale', action='store_true')
     parser.add_argument('--using_flip', action='store_true')
@@ -43,6 +43,7 @@ if __name__ == '__main__':
     parser.add_argument('--log_step', type=int, default=500)
     parser.add_argument('--save_step', type=int, default=10000)
 
+    parser.add_argument('--opt', type=str, default='adam', help='choose from adam and sgd')
     parser.add_argument('--lr', type=float, default=2e-4)
     parser.add_argument("--lambda_h", type=float, default=100.0)
     parser.add_argument('--lambda_d', type=float, default=0.1)
@@ -111,7 +112,10 @@ if __name__ == '__main__':
     model = PixelwiseRegression(joints, **model_parameters)
     model = model.to(device)
 
-    optim = torch.optim.Adam(model.parameters(), lr=args.lr)
+    if args.opt == 'adam':
+        optim = torch.optim.Adam(model.parameters(), lr=args.lr)
+    elif args.opt == 'sgd':
+        optim = torch.optim.SGD(model.parameters(), lr=args.lr)
 
     writer = SummaryWriter('logs/{}'.format(log_name))
 
