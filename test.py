@@ -23,7 +23,8 @@ if __name__ == '__main__':
     parser.add_argument('--label_size', type=int, default=64)
     parser.add_argument('--kernel_size', type=int, default=7)
     parser.add_argument('--sigmoid', type=float, default=1.5)
-    parser.add_argument('--heatmap_method', type=str, default='softmax')
+    parser.add_argument('--norm_method', type=str, default='batch', help='choose from batch and instance')
+    parser.add_argument('--heatmap_method', type=str, default='softmax', help='choose from softmax and origin')
 
     parser.add_argument('--gpu_id', type=int, default=0)
     parser.add_argument('--steps', type=int, default=30000)
@@ -62,6 +63,7 @@ if __name__ == '__main__':
         "label_size" : args.label_size, 
         "features" : args.features, 
         "level" : args.level,
+        "norm_method" : args.norm_method,
         "heatmap_method" : args.heatmap_method,
     }
 
