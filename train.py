@@ -45,6 +45,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--opt', type=str, default='adam', help='choose from adam and sgd')
     parser.add_argument('--lr', type=float, default=2e-4)
+    parser.add_argument('--weight_decay', type=float, default=0)
     parser.add_argument("--lambda_h", type=float, default=100.0)
     parser.add_argument('--lambda_d', type=float, default=0.1)
     parser.add_argument('--alpha', type=float, default=0.5)
@@ -113,9 +114,9 @@ if __name__ == '__main__':
     model = model.to(device)
 
     if args.opt == 'adam':
-        optim = torch.optim.Adam(model.parameters(), lr=args.lr)
+        optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     elif args.opt == 'sgd':
-        optim = torch.optim.SGD(model.parameters(), lr=args.lr)
+        optim = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     writer = SummaryWriter('logs/{}'.format(log_name))
 
