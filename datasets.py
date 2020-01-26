@@ -125,7 +125,9 @@ class HandDataset(torch.utils.data.Dataset):
         """
             Check if the dataset is already created
         """
-        return os.path.exists(os.path.join(self.path, "train.txt")) and os.path.exists(os.path.join(self.path, "test.txt"))
+        return os.path.exists(os.path.join(self.path, "train.txt")) and \
+            os.path.exists(os.path.join(self.path, "val.txt")) and \
+            os.path.exists(os.path.join(self.path, "test.txt"))
 
     def build_data(self):
         """
@@ -397,20 +399,14 @@ class MSRADataset(HandDataset):
                     traintxt.append(text)
                 pbar.update(1)
         pool.close()
-
-        # traintxt = []
-        # with tqdm(total=len(datatexts)) as pbar:
-        #     for text in datatexts:
-        #         try:
-        #             self.process_single_data(text)
-        #             traintxt.append(text)
-        #         except:
-        #             pass
-        #         pbar.update(1)
         
         print('{} / {} data can use to train'.format(len(traintxt), len(datatexts)))
+
         with open(os.path.join(self.path, "train.txt"), 'w') as f:
-            f.writelines(traintxt)
+            f.writelines(filter(lambda s: not 'P0' in s, traintxt))
+
+        with open(os.path.join(self.path, "val.txt"), 'w') as f:
+            f.writelines(filter(lambda s: 'P0' in s, traintxt))
         
     def load_from_text(self, text):
         """
@@ -513,6 +509,13 @@ class ICVLDataset(HandDataset):
             pool.close()
             
             print('{} / {} data can use to train'.format(len(traintxt), len(datatexts)))
+
+            valtxt = traintxt[:1024]
+            traintxt = traintxt[1024:]
+
+            with open(os.path.join(self.path, "val.txt"), 'w') as f:
+                f.write("\n".join(valtxt))
+
             with open(os.path.join(self.path, "train.txt"), 'w') as f:
                 f.write("\n".join(traintxt))
         

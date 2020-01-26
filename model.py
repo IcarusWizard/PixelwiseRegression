@@ -1,19 +1,19 @@
 import torch
 from torch.functional import F
 
-from utils import generate_com_filter
+from utils import generate_com_filter, xavier_weights_init
 
 class ResBlock(torch.nn.Module):
     def __init__(self, features, norm=torch.nn.BatchNorm2d, inplace=True):
         super(ResBlock, self).__init__()
         self.conv = torch.nn.Sequential(
-            norm(features),
+            norm(features, affine=True),
             torch.nn.ReLU(inplace),
             torch.nn.Conv2d(features, features // 2, 1, stride=1),
-            norm(features // 2),
+            norm(features // 2, affine=True),
             torch.nn.ReLU(inplace),
             torch.nn.Conv2d(features // 2, features // 2, 3, stride=1, padding=1),
-            norm(features // 2),
+            norm(features // 2, affine=True),
             torch.nn.ReLU(inplace),
             torch.nn.Conv2d(features // 2, features, 1, stride=1)
         )
@@ -52,13 +52,13 @@ class PlaneRegression(torch.nn.Module):
         super(PlaneRegression, self).__init__()
         self.conv = torch.nn.Sequential(
             torch.nn.Conv2d(features, features, 3, stride=1, padding=1),
-            norm(features),
+            norm(features, affine=True),
             torch.nn.ReLU(inplace),
             torch.nn.Conv2d(features, features, 3, stride=1, padding=1),
-            norm(features),
+            norm(features, affine=True),
             torch.nn.ReLU(inplace),
             torch.nn.Conv2d(features, features, 3, stride=1, padding=1),
-            norm(features),
+            norm(features, affine=True),
             torch.nn.ReLU(inplace),
             torch.nn.Conv2d(features, joints, 3, stride=1, padding=1)
         )
@@ -98,13 +98,13 @@ class DepthRegression(torch.nn.Module):
         super(DepthRegression, self).__init__()
         self.conv = torch.nn.Sequential(
             torch.nn.Conv2d(features, features, 3, stride=1, padding=1),
-            norm(features),
+            norm(features, affine=True),
             torch.nn.ReLU(inplace),
             torch.nn.Conv2d(features, features, 3, stride=1, padding=1),
-            norm(features),
+            norm(features, affine=True),
             torch.nn.ReLU(inplace),
             torch.nn.Conv2d(features, features, 3, stride=1, padding=1),
-            norm(features),
+            norm(features, affine=True),
             torch.nn.ReLU(inplace),
             torch.nn.Conv2d(features, joints, 3, stride=1, padding=1)
         )
@@ -157,7 +157,7 @@ class PixelwiseRegression(torch.nn.Module):
 
         init_conv = [
             torch.nn.Conv2d(1, 32, 3, stride=1, padding=1),
-            norm(32),
+            norm(32, affine=True),
             torch.nn.ReLU(True)
         ]
 
@@ -165,26 +165,29 @@ class PixelwiseRegression(torch.nn.Module):
         while conv_features < features:
             init_conv.extend([
                 torch.nn.Conv2d(conv_features, 2 * conv_features, 3, stride=1, padding=1),
-                norm(2 * conv_features),
+                norm(2 * conv_features, affine=True),
                 torch.nn.ReLU(True)
             ])
             conv_features *= 2
 
         init_conv.extend([
             torch.nn.Conv2d(features, features, 3, stride=2, padding=1),
-            norm(features),
+            norm(features, affine=True),
             torch.nn.ReLU(True)
         ])
 
         self.conv = torch.nn.Sequential(*init_conv)
 
-        concat_dim = features + 2 * joints + 1
+        # concat_dim = features + 2 * joints + 1
+        concat_dim = 2 * joints + 1
         stage_list = [
             PredictionBlock(features if i == 0 else concat_dim, joints, label_size, \
-                features, level, heatmap_method=heatmap_method) for i in range(stage)
+                features, level, heatmap_method=heatmap_method, norm=norm) for i in range(stage)
         ]
 
         self.stages = torch.nn.ModuleList(stage_list)
+
+        self.apply(xavier_weights_init)
 
     def forward(self, img, label_img, mask):
         f = self.conv(img)
@@ -193,7 +196,8 @@ class PixelwiseRegression(torch.nn.Module):
         for stage in self.stages:
             f, heatmaps, depthmaps, uvd = stage(f, label_img, mask)
             results.append((heatmaps, depthmaps, uvd))
-            f = torch.cat([f, heatmaps, depthmaps, label_img], dim=1)
+            # f = torch.cat([f, heatmaps, depthmaps, label_img], dim=1)
+            f = torch.cat([heatmaps, depthmaps, label_img], dim=1)
 
         return results # list of tuple
 
@@ -212,13 +216,13 @@ class FullRegressionBlock(torch.nn.Module):
 
         self.downsampling = torch.nn.Sequential(
             torch.nn.Conv2d(features, features, 3, stride=2, padding=1),
-            norm(features),
+            norm(features, affine=True),
             torch.nn.ReLU(True),
             torch.nn.Conv2d(features, features, 3, stride=2, padding=1),
-            norm(features),
+            norm(features, affine=True),
             torch.nn.ReLU(True),
             torch.nn.Conv2d(features, features, 3, stride=2, padding=1),
-            norm(features),
+            norm(features, affine=True),
             torch.nn.ReLU(True)
         )
 
@@ -255,7 +259,7 @@ class FullRegression(torch.nn.Module):
 
         init_conv = [
             torch.nn.Conv2d(1, 32, 3, stride=1, padding=1),
-            norm(32),
+            norm(32, affine=True),
             torch.nn.ReLU(True)
         ]
 
@@ -263,14 +267,14 @@ class FullRegression(torch.nn.Module):
         while conv_features < features:
             init_conv.extend([
                 torch.nn.Conv2d(conv_features, 2 * conv_features, 3, stride=1, padding=1),
-                norm(2 * conv_features),
+                norm(2 * conv_features, affine=True),
                 torch.nn.ReLU(True)
             ])
             conv_features *= 2
 
         init_conv.extend([
             torch.nn.Conv2d(features, features, 3, stride=2, padding=1),
-            norm(features),
+            norm(features, affine=True),
             torch.nn.ReLU(True)
         ])
 
@@ -282,6 +286,8 @@ class FullRegression(torch.nn.Module):
         ]
 
         self.stages = torch.nn.ModuleList(stage_list)
+
+        self.apply(xavier_weights_init)
 
     def forward(self, img, label_img, mask):
         f = self.conv(img)

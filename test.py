@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 from model import PixelwiseRegression
 import datasets
-from utils import load_model, recover_uvd
+from utils import load_model, recover_uvd, select_gpus
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -23,11 +23,10 @@ if __name__ == '__main__':
     parser.add_argument('--label_size', type=int, default=64)
     parser.add_argument('--kernel_size', type=int, default=7)
     parser.add_argument('--sigmoid', type=float, default=1.5)
-    parser.add_argument('--norm_method', type=str, default='batch', help='choose from batch and instance')
-    parser.add_argument('--heatmap_method', type=str, default='softmax', help='choose from softmax and origin')
+    parser.add_argument('--norm_method', type=str, default='instance', help='choose from batch and instance')
+    parser.add_argument('--heatmap_method', type=str, default='softmax', help='choose from softmax and sumz')
 
-    parser.add_argument('--gpu_id', type=int, default=0)
-    parser.add_argument('--steps', type=int, default=30000)
+    parser.add_argument('--gpu_id', type=str, default='0')
     parser.add_argument("--num_workers", type=int, default=9999)
     parser.add_argument('--stages', type=int, default=2)
     parser.add_argument('--features', type=int, default=128)
@@ -78,7 +77,8 @@ if __name__ == '__main__':
 
     test_loader = torch.utils.data.DataLoader(testset, **test_loader_parameters)
 
-    device = torch.device('cuda:{}'.format(args.gpu_id) if torch.cuda.is_available() else 'cpu')
+    select_gpus(args.gpu_id)
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     
     model = PixelwiseRegression(joints, **model_parameters)
     load_model(model, os.path.join('Model', model_name), eval_mode=True)

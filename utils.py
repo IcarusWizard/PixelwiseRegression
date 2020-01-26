@@ -271,13 +271,19 @@ def setup_seed(seed):
     random.seed(seed)
     torch.backends.cudnn.deterministic = True
 
-def save_model(model, filename):
-    torch.save(model.state_dict(), filename)
+def save_model(model, filename, seed=None, model_param=None):
+    torch.save({
+        "state_dict" : model.state_dict(),
+        "seed" : seed,
+        "model_param" : model_param,
+    }, filename)
 
 def load_model(model, filename, eval_mode=False):
-    model.load_state_dict(torch.load(filename, map_location='cpu'))
+    checkpoint = torch.load(filename, map_location='cpu')
+    model.load_state_dict(checkpoint['state_dict'])
     if eval_mode:
         model.eval()
+    return checkpoint['seed'], checkpoint['model_param']
 
 def step_loader(dataloder):
     data = iter(dataloder)
@@ -289,9 +295,20 @@ def step_loader(dataloder):
             x = next(data)
         yield x
 
+def select_gpus(gpus="0"):
+    '''
+        gpus -> string, examples: "0", "0,1,2"
+    ''' 
+    os.environ['CUDA_VISIBLE_DEVICES'] = gpus
+
 def recover_uvd(uvd, box_size, com, threshold):
     uvd[:, :, :2] = uvd[:, :, :2] * (box_size - 1).view(-1, 1, 1)
     uvd[:, :, 2] = uvd[:, :, 2] * threshold
     uvd = uvd + com.unsqueeze(1)
 
     return uvd
+
+def xavier_weights_init(m):
+    classname = m.__class__.__name__
+    if isinstance(m, torch.nn.Conv2d):
+        torch.nn.init.xavier_normal_(m.weight.data)

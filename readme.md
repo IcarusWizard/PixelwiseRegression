@@ -19,12 +19,18 @@ If you find this open source release useful, please reference in your paper:
 PyTorch >= 1.0  
 tensorboard (install by `pip install tb-nightly`)
 
+## Setup
+```
+conda env create -f env.yml
+conda activate pixelwise
+```
+
 ## Dataset  
 All datasets should be placed in `./Data` folder.  
 ### MSRA  
 1. Download the dataset from [dropbox](https://www.dropbox.com/s/bmx2w0zbnyghtp7/cvpr15_MSRAHandGestureDB.zip?dl=0).
 2. Unzip the files to `./Data` and rename the folder as `MSRA`.
-3. Download the default [train.txt](https://drive.google.com/open?id=1RESPwhnlbQ1Rg7qNPCJ0zGBy7aOjdGmB) and [test.txt](https://drive.google.com/open?id=1QZTl5X5IX4GPZ429l_EOkf0yBnzYGQHO) from Google Drive. In our default setting, 76318 out of 76500 frames are valid for training. If you don't want to use our default setting, feel free to change the parameters in `datasets.py`, and run `python check_dataset.py --dataset MSRA` to build the data files.
+3. Download the default [train.txt](https://drive.google.com/open?id=1RESPwhnlbQ1Rg7qNPCJ0zGBy7aOjdGmB) and [test.txt](https://drive.google.com/open?id=1QZTl5X5IX4GPZ429l_EOkf0yBnzYGQHO) from Google Drive. In our default setting, 76318 out of 76375 frames are valid for training. If you don't want to use our default setting, feel free to change the parameters in `datasets.py`, and run `python check_dataset.py --dataset MSRA` to build the data files.
 
 ### ICVL  
 1. Download the dataset from [here](https://labicvl.github.io/hand.html).  

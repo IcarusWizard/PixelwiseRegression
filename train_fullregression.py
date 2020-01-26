@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 from model import FullRegression
 import datasets
-from utils import setup_seed, step_loader, save_model, draw_skeleton_torch
+from utils import setup_seed, save_model, draw_skeleton_torch, select_gpus
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -28,18 +28,18 @@ if __name__ == '__main__':
     parser.add_argument('--label_size', type=int, default=64)
     parser.add_argument('--kernel_size', type=int, default=7)
     parser.add_argument('--sigmoid', type=float, default=1.5)
+    parser.add_argument('--norm_method', type=str, default='instance', help='choose from batch and instance')
+    
     parser.add_argument('--using_rotation', action='store_true')
     parser.add_argument('--using_scale', action='store_true')
     parser.add_argument('--using_flip', action='store_true')
 
-    parser.add_argument('--gpu_id', type=int, default=0)
-    parser.add_argument('--steps', type=int, default=30000)
+    parser.add_argument('--gpu_id', type=str, default='0')
+    parser.add_argument('--epoch', type=int, default=30)
     parser.add_argument("--num_workers", type=int, default=9999)
     parser.add_argument('--stages', type=int, default=2)
     parser.add_argument('--features', type=int, default=128)
     parser.add_argument('--level', type=int, default=4)
-    parser.add_argument('--log_step', type=int, default=500)
-    parser.add_argument('--save_step', type=int, default=10000)
 
     parser.add_argument('--lr', type=float, default=2e-4)
 
@@ -48,15 +48,14 @@ if __name__ == '__main__':
     if not os.path.exists('Model'):
         os.makedirs('Model')
 
-    if not args.seed == 0:
-        setup_seed(args.seed)
+    seed = args.seed if args.seed else np.random.randint(0, 100000)
+    setup_seed(seed) 
 
     dataset_parameters = {
         "image_size" : args.label_size * 2,
         "label_size" : args.label_size,
         "kernel_size" : args.kernel_size,
         "sigmoid" : args.sigmoid,
-        "dataset" : "train",
         "using_rotation" : args.using_rotation,
         "using_scale" : args.using_scale,
         "using_flip" : args.using_flip,
@@ -71,7 +70,7 @@ if __name__ == '__main__':
     }
 
     val_loader_parameters = {
-        "batch_size" : 4 * args.batch_size,
+        "batch_size" : args.batch_size,
         "shuffle" : False,
         "pin_memory" : True, 
         "drop_last" : False,
@@ -83,23 +82,24 @@ if __name__ == '__main__':
         "label_size" : args.label_size, 
         "features" : args.features, 
         "level" : args.level,
+        "norm_method" : args.norm_method,
     }
 
     log_name = "{}_{}".format(args.dataset, args.suffix)
     model_name = log_name + "_{}.pt" 
 
     Dataset = getattr(datasets, "{}Dataset".format(args.dataset))
-    trainset = Dataset(**dataset_parameters)
+    trainset = Dataset(dataset='train', **dataset_parameters)
+    valset = Dataset(dataset='val', **dataset_parameters)
 
     joints = trainset.joint_number
     config = trainset.config
-    
-    valset, trainset = torch.utils.data.random_split(trainset, (1024, len(trainset) - 1024))
 
     train_loader = torch.utils.data.DataLoader(trainset, **train_loader_parameters)
     val_loader = torch.utils.data.DataLoader(valset, **val_loader_parameters)
 
-    device = torch.device('cuda:{}'.format(args.gpu_id) if torch.cuda.is_available() else 'cpu')
+    select_gpus(args.gpu_id)
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     
     model = FullRegression(joints, **model_parameters)
     model = model.to(device)
@@ -108,87 +108,93 @@ if __name__ == '__main__':
 
     writer = SummaryWriter('logs/{}'.format(log_name))
 
-    step = 0
-    with tqdm(total=args.steps) as pbar:
-        for batch in step_loader(train_loader):
-            img, label_img, mask, box_size, com, uvd, heatmaps, depthmaps = batch
-            
-            img = img.to(device, non_blocking=True)
-            label_img = label_img.to(device, non_blocking=True)
-            mask = mask.to(device, non_blocking=True)
-            uvd = uvd.to(device, non_blocking=True)
+    steps_per_epoch = len(trainset) // args.batch_size
+    print("there are {} steps per epoch!".format(steps_per_epoch))
+    total_steps = steps_per_epoch * args.epoch
 
-            results = model(img, label_img, mask)
+    best_epoch = 0
+    best_loss = 9999999
 
-            every_loss = []
-            for i, result in enumerate(results):
-                _uvd = result
-                uvd_loss = torch.mean((_uvd - uvd) ** 2)
-                every_loss.append(uvd_loss)
+    with tqdm(total=total_steps) as pbar:
+        for epoch in range(args.epoch):
+            for batch in iter(train_loader):
+                img, label_img, mask, box_size, com, uvd, heatmaps, depthmaps = batch
+                
+                img = img.to(device, non_blocking=True)
+                label_img = label_img.to(device, non_blocking=True)
+                mask = mask.to(device, non_blocking=True)
+                uvd = uvd.to(device, non_blocking=True)
 
-            loss = 0
-            for losses in every_loss:
-                uvd_loss = losses
-                loss = loss + uvd_loss
+                results = model(img, label_img, mask)
 
-            optim.zero_grad()
-            loss.backward()
-            optim.step()
-
-            if step % args.log_step == 0:
-                # log image results in tensorboard
-                writer.add_images('input_image', img, global_step=step)
-                skeleton = draw_skeleton_torch(img[0].cpu(), uvd[0].cpu(), config)
-                writer.add_image('input_skeleton', skeleton, global_step=step)
+                every_loss = []
                 for i, result in enumerate(results):
                     _uvd = result
-                    _skeleton = draw_skeleton_torch(img[0].cpu(), _uvd[0].detach().cpu(), config)
-                    writer.add_image('stage{}_skeleton'.format(i), _skeleton, global_step=step)
-                         
-                with torch.no_grad():
-                    # compute val losses
-                    num = 0
+                    uvd_loss = torch.mean((_uvd - uvd) ** 2)
+                    every_loss.append(uvd_loss)
 
-                    val_every_loss = []
-                    for i in range(len(results)):
-                        val_every_loss.append(0)
+                loss = 0
+                for losses in every_loss:
+                    uvd_loss = losses
+                    loss = loss + uvd_loss
 
-                    for val_batch in iter(val_loader):
-                        num += 1
-                        img, label_img, mask, box_size, com, uvd, heatmaps, depthmaps = val_batch
+                optim.zero_grad()
+                loss.backward()
+                optim.step()
+
+                pbar.update(1)
+
+            # log image results in tensorboard
+            writer.add_images('input_image', img, global_step=epoch)
+            skeleton = draw_skeleton_torch(img[0].cpu(), uvd[0].cpu(), config)
+            writer.add_image('input_skeleton', skeleton, global_step=epoch)
+            for i, result in enumerate(results):
+                _uvd = result
+                _skeleton = draw_skeleton_torch(img[0].cpu(), _uvd[0].detach().cpu(), config)
+                writer.add_image('stage{}_skeleton'.format(i), _skeleton, global_step=epoch)
                         
-                        img = img.to(device, non_blocking=True)
-                        label_img = label_img.to(device, non_blocking=True)
-                        mask = mask.to(device, non_blocking=True)
-                        uvd = uvd.to(device, non_blocking=True)
+            with torch.no_grad():
+                # compute val losses
+                num = 0
 
-                        results = model(img, label_img, mask)
+                val_every_loss = []
+                for i in range(len(results)):
+                    val_every_loss.append(0)
 
-                        for i, result in enumerate(results):
-                            _uvd = result
-                            uvd_loss = torch.mean((_uvd - uvd) ** 2)
-                            _uvd_loss = val_every_loss[i]
-                            val_every_loss[i] = _uvd_loss + uvd_loss
+                for val_batch in iter(val_loader):
+                    num += 1
+                    img, label_img, mask, box_size, com, uvd, heatmaps, depthmaps = val_batch
                     
-                    for i in range(len(results)):
+                    img = img.to(device, non_blocking=True)
+                    label_img = label_img.to(device, non_blocking=True)
+                    mask = mask.to(device, non_blocking=True)
+                    uvd = uvd.to(device, non_blocking=True)
+
+                    results = model(img, label_img, mask)
+
+                    for i, result in enumerate(results):
+                        _uvd = result
+                        uvd_loss = torch.mean((_uvd - uvd) ** 2)
                         _uvd_loss = val_every_loss[i]
-                        val_every_loss[i] = _uvd_loss / num
-
-                    val_loss = 0
-                    for losses in val_every_loss:
-                        uvd_loss = losses
-                        val_loss = val_loss + uvd_loss 
+                        val_every_loss[i] = _uvd_loss + uvd_loss
                 
-                # log scalas in tensorboard
-                writer.add_scalars('loss', {'train' : loss.item(), 'val' : val_loss.item()}, global_step=step)
+                for i in range(len(results)):
+                    _uvd_loss = val_every_loss[i]
+                    val_every_loss[i] = _uvd_loss / num
 
-            if step % args.save_step == 0:
-                save_model(model, os.path.join('Model', model_name.format(step)))
+                val_loss = 0
+                for losses in val_every_loss:
+                    uvd_loss = losses
+                    val_loss = val_loss + uvd_loss 
+            
+            # log scalas in tensorboard
+            writer.add_scalars('loss', {'train' : loss.item(), 'val' : val_loss.item()}, global_step=epoch)
 
-            step = step + 1
-            pbar.update(1)
+            save_model(model, os.path.join('Model', model_name.format(epoch)), seed=seed, model_param=model_parameters)
 
-            if step >= args.steps:
-                break
+            if val_every_loss[-1][-1] < best_loss:
+                best_epoch = epoch
+                best_loss = val_every_loss[-1][-1]
 
-    save_model(model, os.path.join('Model', model_name.format('final')))
+    print("best epoch is {}".format(best_epoch))
+    os.system('cp {} {}'.format(os.path.join('Model', model_name.format(best_epoch)), os.path.join('Model', model_name.format('final'))))
