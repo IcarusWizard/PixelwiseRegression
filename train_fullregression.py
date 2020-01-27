@@ -192,9 +192,9 @@ if __name__ == '__main__':
 
             save_model(model, os.path.join('Model', model_name.format(epoch)), seed=seed, model_param=model_parameters)
 
-            if val_every_loss[-1][-1] < best_loss:
+            if val_every_loss[-1] < best_loss:
                 best_epoch = epoch
-                best_loss = val_every_loss[-1][-1]
+                best_loss = val_every_loss[-1]
 
     print("best epoch is {}".format(best_epoch))
     os.system('cp {} {}'.format(os.path.join('Model', model_name.format(best_epoch)), os.path.join('Model', model_name.format('final'))))
