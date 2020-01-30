@@ -36,15 +36,15 @@ class Hourglass(torch.nn.Module):
         self.up_sample = torch.nn.UpsamplingNearest2d(scale_factor=2)
 
     def forward(self, x):
-        h = self.input_conv(x)
-        h = self.down_sample(h)
+        x = self.input_conv(x)
+        h = self.down_sample(x)
 
         h = self.inner(h)
 
         h = self.output_conv(h)
         h = self.up_sample(h)
 
-        return h
+        return F.relu(h + x, inplace=True)
 
 class PlaneRegression(torch.nn.Module):
     def __init__(self, features, joints, label_size, norm=torch.nn.BatchNorm2d, inplace=True, normalization_method='softmax'):
