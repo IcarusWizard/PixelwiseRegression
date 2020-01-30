@@ -120,6 +120,33 @@ def draw_skeleton_torch(img, joints, config, *, rP = 3, linewidth = 1):
     img3D = torch.from_numpy(img3D).float().permute(2, 0, 1).contiguous()
     return img3D
 
+def draw_features(features):
+    """
+        draw heatmaps and depth maps with 8 cols
+        Input: features -> ndarray[H, W, C]
+    """
+    C = features.shape[2]
+
+    rows = C // 8 + (not C % 8 == 0)
+
+    fig, axes = plt.subplots(rows, 8, figsize=(8, rows))
+    plt.subplots_adjust(wspace=0.0, hspace=0.0)
+
+    for i in range(rows):
+        for j in range(8):
+            index = i * 8 + j
+            if index >= C:
+                axes[i, j].imshow(np.zeros_like(features[:, :, 0]), cmap=plt.cm.jet)
+            else:
+                axes[i, j].imshow(features[:, :, index], cmap=plt.cm.jet)
+            axes[i, j].axis('off')
+
+    return fig
+
+def draw_features_torch(features):
+    features = features.permute(1, 2, 0).cpu().numpy()
+    return draw_features(features)
+
 def findmax_batch(img):
     imgsize = img.shape[1]
     temimg = img.reshape((img.shape[0], imgsize ** 2, img.shape[3]))
