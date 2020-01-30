@@ -144,7 +144,7 @@ def draw_features(features):
     return fig
 
 def draw_features_torch(features):
-    features = features.permute(1, 2, 0).cpu().numpy()
+    features = features.permute(1, 2, 0).detach().cpu().numpy()
     return draw_features(features)
 
 def findmax_batch(img):

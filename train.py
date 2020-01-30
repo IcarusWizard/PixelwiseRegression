@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 from model import PixelwiseRegression
 import datasets
-from utils import setup_seed, step_loader, save_model, draw_skeleton_torch, select_gpus
+from utils import setup_seed, step_loader, save_model, draw_skeleton_torch, select_gpus, draw_features_torch
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -38,19 +38,16 @@ if __name__ == '__main__':
 
     parser.add_argument('--gpu_id', type=str, default="0")
     parser.add_argument('--epoch', type=int, default=30)
-    # parser.add_argument('--steps', type=int, default=30000)
     parser.add_argument("--num_workers", type=int, default=9999)
     parser.add_argument('--stages', type=int, default=2)
     parser.add_argument('--features', type=int, default=128)
     parser.add_argument('--level', type=int, default=4)
-    parser.add_argument('--log_step', type=int, default=2000)
-    parser.add_argument('--save_step', type=int, default=10000)
 
     parser.add_argument('--opt', type=str, default='adam', help='choose from adam and sgd')
     parser.add_argument('--lr', type=float, default=2e-4)
     parser.add_argument('--weight_decay', type=float, default=0)
-    parser.add_argument("--lambda_h", type=float, default=100.0)
-    parser.add_argument('--lambda_d', type=float, default=0.1)
+    parser.add_argument("--lambda_h", type=float, default=1.0)
+    parser.add_argument('--lambda_d', type=float, default=1.0)
     parser.add_argument('--alpha', type=float, default=0.5)
 
     args = parser.parse_args()
@@ -61,7 +58,8 @@ if __name__ == '__main__':
     seed = args.seed if args.seed else np.random.randint(0, 100000)
     setup_seed(seed) 
 
-    dataset_parameters = {
+    trainset_parameters = {
+        "dataset" : "train",
         "image_size" : args.label_size * 2,
         "label_size" : args.label_size,
         "kernel_size" : args.kernel_size,
@@ -69,6 +67,17 @@ if __name__ == '__main__':
         "using_rotation" : args.using_rotation,
         "using_scale" : args.using_scale,
         "using_flip" : args.using_flip,
+    }
+
+    valset_parameters = {
+        "dataset" : "val",
+        "image_size" : args.label_size * 2,
+        "label_size" : args.label_size,
+        "kernel_size" : args.kernel_size,
+        "sigmoid" : args.sigmoid,
+        "using_rotation" : False,
+        "using_scale" : False,
+        "using_flip" : False,
     }
 
     train_loader_parameters = {
@@ -100,8 +109,8 @@ if __name__ == '__main__':
     model_name = log_name + "_{}.pt" 
 
     Dataset = getattr(datasets, "{}Dataset".format(args.dataset))
-    trainset = Dataset(dataset='train', **dataset_parameters)
-    valset = Dataset(dataset='val', **dataset_parameters)
+    trainset = Dataset(**trainset_parameters)
+    valset = Dataset(**valset_parameters)
 
     joints = trainset.joint_number
     config = trainset.config
@@ -146,9 +155,12 @@ if __name__ == '__main__':
                 every_loss = []
                 for i, result in enumerate(results):
                     _heatmaps, _depthmaps, _uvd = result
-                    heatmap_loss = args.lambda_h * torch.mean((_heatmaps - heatmaps) ** 2)
-                    depthmap_loss = args.lambda_d * torch.mean((_depthmaps - depthmaps) ** 2)
-                    uvd_loss = torch.mean((_uvd - uvd) ** 2)
+                    # heatmap_loss = args.lambda_h * torch.mean((_heatmaps - heatmaps) ** 2)
+                    # depthmap_loss = args.lambda_d * torch.mean((_depthmaps - depthmaps) ** 2)
+                    # uvd_loss = torch.mean((_uvd - uvd) ** 2)
+                    heatmap_loss = args.lambda_h * torch.mean(torch.sum((_heatmaps - heatmaps) ** 2, dim=(2, 3)))
+                    depthmap_loss = args.lambda_d * torch.mean(torch.sum((_depthmaps - depthmaps) ** 2, dim=(2, 3)))
+                    uvd_loss = torch.mean(torch.sum((_uvd - uvd) ** 2, dim=2))
                     every_loss.append((heatmap_loss, depthmap_loss, uvd_loss))
 
                 loss = 0
@@ -164,14 +176,18 @@ if __name__ == '__main__':
 
             # log image results in tensorboard
             writer.add_images('input_image', img, global_step=epoch)
-            writer.add_images('input_heatmap', heatmaps[0].unsqueeze(1) / heatmaps[0].max(), global_step=epoch)
-            writer.add_images('input_depthmap', depthmaps[0].unsqueeze(1), global_step=epoch)
+            # writer.add_images('input_heatmap', heatmaps[0].unsqueeze(1) / heatmaps[0].max(), global_step=epoch)
+            # writer.add_images('input_depthmap', depthmaps[0].unsqueeze(1), global_step=epoch)
+            writer.add_figure('input_heatmap', draw_features_torch(heatmaps[0]), global_step=epoch)
+            writer.add_figure('input_depthmap', draw_features_torch(depthmaps[0]), global_step=epoch)
             skeleton = draw_skeleton_torch(img[0].cpu(), uvd[0].cpu(), config)
             writer.add_image('input_skeleton', skeleton, global_step=epoch)
             for i, result in enumerate(results):
                 _heatmaps, _depthmaps, _uvd = result
-                writer.add_images('stage{}_heatmap'.format(i), _heatmaps[0].unsqueeze(1) / _heatmaps[0].max(), global_step=epoch)
-                writer.add_images('stage{}_depthmap'.format(i), _depthmaps[0].unsqueeze(1), global_step=epoch)
+                # writer.add_images('stage{}_heatmap'.format(i), _heatmaps[0].unsqueeze(1) / _heatmaps[0].max(), global_step=epoch)
+                # writer.add_images('stage{}_depthmap'.format(i), _depthmaps[0].unsqueeze(1), global_step=epoch)
+                writer.add_figure('stage{}_heatmap'.format(i), draw_features_torch(_heatmaps[0]), global_step=epoch)
+                writer.add_figure('stage{}_depthmap'.format(i), draw_features_torch(_depthmaps[0]), global_step=epoch)
                 _skeleton = draw_skeleton_torch(img[0].cpu(), _uvd[0].detach().cpu(), config)
                 writer.add_image('stage{}_skeleton'.format(i), _skeleton, global_step=epoch)
                         
@@ -198,9 +214,12 @@ if __name__ == '__main__':
 
                     for i, result in enumerate(results):
                         _heatmaps, _depthmaps, _uvd = result
-                        heatmap_loss = args.lambda_h * torch.mean((_heatmaps - heatmaps) ** 2)
-                        depthmap_loss = args.lambda_d * torch.mean((_depthmaps - depthmaps) ** 2)
-                        uvd_loss = torch.mean((_uvd - uvd) ** 2)
+                        # heatmap_loss = args.lambda_h * torch.mean((_heatmaps - heatmaps) ** 2)
+                        # depthmap_loss = args.lambda_d * torch.mean((_depthmaps - depthmaps) ** 2)
+                        # uvd_loss = torch.mean((_uvd - uvd) ** 2)
+                        heatmap_loss = args.lambda_h * torch.mean(torch.sum((_heatmaps - heatmaps) ** 2, dim=(2, 3)))
+                        depthmap_loss = args.lambda_d * torch.mean(torch.sum((_depthmaps - depthmaps) ** 2, dim=(2, 3)))
+                        uvd_loss = torch.mean(torch.sum((_uvd - uvd) ** 2, dim=2))
                         _heatmaps_loss, _depthmap_loss, _uvd_loss = val_every_loss[i]
                         val_every_loss[i] = ((
                             _heatmaps_loss + heatmap_loss, 
