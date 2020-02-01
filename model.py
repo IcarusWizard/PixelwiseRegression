@@ -33,7 +33,6 @@ class Hourglass(torch.nn.Module):
             self.inner = ResBlock(features, norm=norm)
 
         self.output_conv = ResBlock(features, norm=norm)
-        self.up_sample = torch.nn.UpsamplingNearest2d(scale_factor=2)
 
     def forward(self, x):
         x = self.input_conv(x)
@@ -42,7 +41,7 @@ class Hourglass(torch.nn.Module):
         h = self.inner(h)
 
         h = self.output_conv(h)
-        h = self.up_sample(h)
+        h = F.interpolate(h, size=x.shape[2:])
 
         return F.relu(h + x, inplace=True)
 
@@ -91,7 +90,6 @@ class PlaneRegression(torch.nn.Module):
         plane_coordinates = torch.cat([u, v], dim=2)
 
         return heatmaps, plane_coordinates
-
 
 class DepthRegression(torch.nn.Module):
     def __init__(self, features, joints, norm=torch.nn.BatchNorm2d, inplace=True):

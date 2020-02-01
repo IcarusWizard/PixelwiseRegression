@@ -3,6 +3,8 @@ import datasets
 import torch, torchvision
 import matplotlib.pyplot as plt
 
+from utils import draw_skeleton_torch
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='MSRA', 
@@ -23,10 +25,22 @@ if __name__ == "__main__":
     loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True)
 
     for batch in iter(loader):
-        img, *_ = batch
+        if args.set == 'test':
+            img, label_img, mask, box_size, com = batch
+        else:
+            img, label_img, mask, box_size, com, uvd, heatmaps, depthmaps = batch
+
+        if not args.set == 'test':  
+            skeleton = draw_skeleton_torch(img[0], uvd[0], dataset.config)
+            skeleton = skeleton.permute(1, 2, 0).numpy()
+            fig, ax = plt.subplots()
+            ax.imshow(skeleton)
+
         img = img.numpy()[0][0]
 
-        plt.imshow(img)
+        fig, ax = plt.subplots()
+        ax.imshow(img)
+
         plt.show() 
 
     
