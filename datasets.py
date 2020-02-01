@@ -15,8 +15,8 @@ from utils import load_bin, draw_skeleton, center_crop, \
 
 class HandDataset(torch.utils.data.Dataset):
     def __init__(self, fx, fy, halfu, halfv, path, sigmoid, image_size, kernel_size,
-                label_size, test_only, using_rotation, using_scale, using_flip, scale_factor, 
-                threshold, joint_number, process_mode='uvd', dataset='train'):
+                label_size, test_only, using_rotation, using_scale, using_flip, 
+                cube_size, joint_number, process_mode='uvd', dataset='train'):
         super(HandDataset, self).__init__()
         self.fx = fx                        # focal length in x axis
         self.fy = fy                        # focal length in y axis
@@ -31,8 +31,9 @@ class HandDataset(torch.utils.data.Dataset):
         self.using_rotation = using_rotation# whether to perform random rotation for images
         self.using_scale = using_scale      # whether to perform a random scale for images
         self.using_flip = using_flip        # whether to filp the image to solve the chirality problem
-        self.scale_factor = scale_factor    # the factor used in random scale
-        self.threshold = threshold          # half of the boxsize in z axis 
+        # self.scale_factor = scale_factor    # the factor used in random scale
+        # self.threshold = threshold          # half of the boxsize in z axis 
+        self.cube_size = cube_size          # half of the cube that crop the hand
         self.joint_number = joint_number    # number of joints
         self.config = None                  # configuration of fingers (index in bottom-up order) 
         self.process_mode = process_mode    # the processing mode used in processing single data (uvd or bb)
@@ -177,39 +178,53 @@ class HandDataset(torch.utils.data.Dataset):
 
         if self.process_mode == 'uvd':
             # decode the text and load the image with only hand and the uvd coordinate of joints
-            image, joint_uvd = self.load_from_text(text)
+            image, joint_uvd, com = self.load_from_text(text)
         else: # process_mode == 'bb'
             assert self.test_only
             image = self.load_from_text_bb(text)
-            
-        # crop the image
-        mean = np.mean(image[image > 0])
-        com = center_of_mass(image)
+            com = None
 
-        try:
-            if self.using_scale:
-                box_size = int((self.scale_factor + (6000 * random.random() - 3000)) / mean)
-            else:
-                box_size = int(self.scale_factor / mean) # empirical number of boundar box fitting
-        except:
-            image_name, _ = self.decode_line_txt(text)
-            print("error for {}, nothing in the image".format(image_name))
-            raise ValueError("error for {}, nothing in the image".format(image_name))
-        
-        box_size = max(box_size, 2) # constrain the min value of the box_size is 2, if we only cut the background the box_size may be 1 or 0
-        crop_img = center_crop(image, com, box_size)
-        
-        # TODO : Do we really need this filter
-        # filter the pixel that have value out of the box
-        crop_img[crop_img - mean > self.threshold] = 0
-        crop_img[crop_img - mean < -self.threshold] = 0 
-        
+        if com is None:
+            mean = np.mean(image[image > 0])
+            com = center_of_mass(image > 0)
+            com = np.array([com[1], com[0], mean])
+
+        # crop the image
+        cube_size = self.cube_size
+
+        du = cube_size / com[2] * self.fx
+        dv = cube_size / com[2] * self.fy
+        box_size = int(du + dv)
+        box_size = max(box_size, 2)
+
+        crop_img = center_crop(image, (com[1], com[0]), box_size)
+
+        crop_img = crop_img * np.logical_and(crop_img > com[2] - cube_size, crop_img < com[2] + cube_size)
+
         # norm the image and uvd to COM
-        crop_img[crop_img > 0] -= mean # center the depth image to COM
-        com = [int(com[1]), int(com[0]), mean]
-        com = np.array(com) # rebuild COM the uvd format
+        crop_img[crop_img > 0] -= com[2] # center the depth image to COM
         
         box_size = crop_img.shape[0] # update box_size
+
+        # try:
+        #     if self.using_scale:
+        #         box_size = int((self.scale_factor + (6000 * random.random() - 3000)) / mean)
+        #     else:
+        #         box_size = int(self.scale_factor / mean) # empirical number of boundar box fitting
+        # except:
+        #     image_name, _ = self.decode_line_txt(text)
+        #     print("error for {}, nothing in the image".format(image_name))
+        #     raise ValueError("error for {}, nothing in the image".format(image_name))
+        
+        # box_size = max(box_size, 2) # constrain the min value of the box_size is 2, if we only cut the background the box_size may be 1 or 0
+        # crop_img = center_crop(image, com, box_size)
+        
+        # # norm the image and uvd to COM
+        # crop_img[crop_img > 0] -= mean # center the depth image to COM
+        # # com = [int(com[1]), int(com[0]), mean]
+        # # com = np.array(com) # rebuild COM the uvd format
+        
+        # box_size = crop_img.shape[0] # update box_size
 
         if self.using_flip:
             if random.random() < 0.5: # probality to flip
@@ -235,8 +250,10 @@ class HandDataset(torch.utils.data.Dataset):
         if self.test_only:
             # Just return the basic elements we need to run the network
             # normalize the image first before return
-            normalized_img = img_resize / self.threshold
-            normalized_label_img = label_image / self.threshold
+            # normalized_img = img_resize / self.threshold
+            # normalized_label_img = label_image / self.threshold
+            normalized_img = img_resize / cube_size
+            normalized_label_img = label_image / cube_size
 
             # Convert to torch format
             normalized_img = torch.from_numpy(normalized_img).float().unsqueeze(0)
@@ -308,12 +325,16 @@ class HandDataset(torch.utils.data.Dataset):
         Dmap = np.concatenate(Dmap, axis=2)   
 
         # Normalize data
-        normalized_img = img_resize / self.threshold
-        normalized_label_img = label_image / self.threshold
-        normalized_Dmap = Dmap / self.threshold
+        # normalized_img = img_resize / self.threshold
+        # normalized_label_img = label_image / self.threshold
+        normalized_img = img_resize / cube_size
+        normalized_label_img = label_image / cube_size
+        # normalized_Dmap = Dmap / self.threshold
+        normalized_Dmap = Dmap / cube_size
         normalized_uvd = joint_uvd_centered_resize.copy()
         normalized_uvd[:, :2] = normalized_uvd[:, :2] / (self.image_size - 1)
-        normalized_uvd[:, 2] = normalized_uvd[:, 2] / self.threshold
+        # normalized_uvd[:, 2] = normalized_uvd[:, 2] / self.threshold
+        normalized_uvd[:, 2] = normalized_uvd[:, 2] / cube_size
         
         if np.any(np.isnan(normalized_img)) or np.any(np.isnan(normalized_uvd)) or \
             np.any(np.isnan(heatmaps)) or np.any(np.isnan(normalized_label_img)) or \
@@ -338,10 +359,10 @@ class MSRADataset(HandDataset):
     def __init__(self, fx = 241.42, fy = 241.42, halfu = 160, halfv = 120, path="Data/MSRA", 
                 sigmoid=1.5, image_size=128, kernel_size=7,
                 label_size=64, test_only=False, using_rotation=False, using_scale=False, using_flip=False, 
-                scale_factor=50000, threshold=200, joint_number=21, dataset='train'):
+                cube_size=150, joint_number=21, dataset='train'):
         super(MSRADataset, self).__init__(fx, fy, halfu, halfv, path, sigmoid, image_size, kernel_size,
-                label_size, test_only, using_rotation, using_scale, using_flip, scale_factor, 
-                threshold, joint_number, process_mode='uvd', dataset=dataset)
+                label_size, test_only, using_rotation, using_scale, using_flip,
+                cube_size, joint_number, process_mode='uvd', dataset=dataset)
 
         Index = [0, 1, 2, 3, 4]
         Mid = [0, 5, 6, 7, 8]
@@ -420,17 +441,17 @@ class MSRADataset(HandDataset):
 
         image = np.zeros((self.halfv * 2, self.halfu * 2))
         image[top:bottom, left:right] = img.copy()
-        return image, joint_uvd
+        return image, joint_uvd, None
 
 class ICVLDataset(HandDataset):
     def __init__(self, fx = 241.42, fy = 241.42, halfu = 160, halfv = 120, path="Data/ICVL/", 
                 sigmoid=1.5, image_size=128, kernel_size=7, label_size=64, 
                 test_only=False, using_rotation=False, using_scale=False, using_flip=False, 
-                scale_factor=60000, threshold=200, joint_number=16, dataset='train'):
+                cube_size=150, joint_number=16, dataset='train'):
 
         super(ICVLDataset, self).__init__(fx, fy, halfu, halfv, path, sigmoid, image_size, kernel_size,
-                label_size, test_only, using_rotation, using_scale, using_flip, scale_factor, 
-                threshold, joint_number, process_mode='uvd', dataset=dataset)
+                label_size, test_only, using_rotation, using_scale, using_flip, 
+                cube_size, joint_number, process_mode='uvd', dataset=dataset)
 
         Index = [0, 4, 5, 6]
         Mid = [0, 7, 8, 9]
@@ -438,6 +459,11 @@ class ICVLDataset(HandDataset):
         Small = [0, 13, 14, 15]
         Thumb = [0, 1, 2, 3]
         self.config = [Thumb, Index, Mid, Ring, Small]
+
+        if dataset == 'val' or dataset == 'test':
+            with open(os.path.join(self.path, 'icvl_center.txt'), 'r') as f:
+                centers = f.readlines()
+            self.centers = np.array(list(map(lambda x: list(map(float, x.strip().split())), centers)))
 
     def build_data(self):
         if self.data_ready:
@@ -530,45 +556,49 @@ class ICVLDataset(HandDataset):
             print("{} do not exist!".format(path))
             raise ValueError("file do not exist")
         
-        # if self.test_only:
-        # if False:
         if self.dataset == 'val' or self.dataset == 'test':
             # ground truth should not be used, perform a imperical threshold here
-            MM = np.logical_and(image < 600, image > 100)
-            image = image * MM
+            # MM = np.logical_and(image < 600, image > 100)
+            # image = image * MM
+            result = re.findall(r'test_seq_(\d)/image_(\d+)', path)[0]
+            subject = int(result[0])
+            index = int(result[1])
+            if subject == 2:
+                index += 702
+            com = self.centers[index]
         else:
-            # crop the image by boundary box
-            uv = joint_uvd[:, :2]
-            left, top = np.min(uv, axis=0) - 20
-            right, buttom = np.max(uv, axis=0) + 20
-            left = max(int(left), 0)
-            top = max(int(top), 0)
-            right = min(int(right), 320)
-            buttom = min(int(buttom), 240)
-            MM = np.zeros(image.shape)
-            MM[top:buttom, left:right] = 1
-            image = image * MM
+            # # crop the image by boundary box
+            # uv = joint_uvd[:, :2]
+            # left, top = np.min(uv, axis=0) - 20
+            # right, buttom = np.max(uv, axis=0) + 20
+            # left = max(int(left), 0)
+            # top = max(int(top), 0)
+            # right = min(int(right), 320)
+            # buttom = min(int(buttom), 240)
+            # MM = np.zeros(image.shape)
+            # MM[top:buttom, left:right] = 1
+            # image = image * MM
+            com = np.mean(joint_uvd, axis=0)
 
-        # remove the background in the boundary box
-        depth = joint_uvd[:, 2]
-        depth_max = np.max(depth)
-        depth_min = np.min(depth)
-        image[image > depth_max + 50] = 0
-        image[image < depth_min - 50] = 0
+        # # remove the background in the boundary box
+        # depth = joint_uvd[:, 2]
+        # depth_max = np.max(depth)
+        # depth_min = np.min(depth)
+        # image[image > depth_max + 50] = 0
+        # image[image < depth_min - 50] = 0
 
-        return image, joint_uvd
+        return image, joint_uvd, com
 
 class NYUDataset(HandDataset):
     def __init__(self, fx = 588.037, fy =587.075, halfu = 320, halfv = 240, path="Data/NYU/", 
                 sigmoid=1.5, image_size=128, kernel_size=7, label_size=64, 
                 test_only=False, using_rotation=False, using_scale=False, using_flip=False, 
-                scale_factor=200000, threshold=300, joint_number=14, dataset='train'):
-        # TODO scale_factor and threshold need to be further tuned
+                cube_size=150, joint_number=14, dataset='train'):
         self.index = [0, 3, 6, 9, 12, 15, 18, 21, 24, 25, 27, 30, 31, 32]
 
         super(NYUDataset, self).__init__(fx, fy, halfu, halfv, path, sigmoid, image_size, kernel_size,
-                label_size, test_only, using_rotation, using_scale, using_flip, scale_factor, 
-                threshold, joint_number, process_mode='uvd', dataset=dataset)
+                label_size, test_only, using_rotation, using_scale, using_flip, 
+                cube_size, joint_number, process_mode='uvd', dataset=dataset)
 
         Index = [13, 1, 0]
         Mid = [13, 3, 2]
@@ -577,6 +607,11 @@ class NYUDataset(HandDataset):
         Thumb = [13, 10, 9, 8]
         PALM = [11, 13, 12]
         self.config = [Thumb, Index, Mid, Ring, Small, PALM]
+
+        if dataset == 'val' or dataset == 'test':
+            with open(os.path.join(self.path, 'nyu_center.txt'), 'r') as f:
+                centers = f.readlines()
+            self.centers = np.array(list(map(lambda x: list(map(float, x.strip().split())), centers)))
 
     def build_data(self):
         if self.data_ready:
@@ -670,12 +705,6 @@ class NYUDataset(HandDataset):
         OUTPUT:
             image, uvd
         """
-        # path, joint_uvd = super().decode_line_txt(text)
-        # img, left, top, right, bottom = load_bin(path)
-
-        # image = np.zeros((self.halfv * 2, self.halfu * 2))
-        # image[top:bottom, left:right] = img.copy()
-        # return image, joint_uvd
 
         cube_size = 150
 
@@ -683,7 +712,6 @@ class NYUDataset(HandDataset):
 
         center = joint_uvd[-1]
         joint_uvd = joint_uvd[:-1]
-        # print('finish 1')
 
         try:
             _image = plt.imread(path)
@@ -691,73 +719,56 @@ class NYUDataset(HandDataset):
         except:
             print("{} do not exist!".format(path))
             raise ValueError("file do not exist")
-        
-        # assert isinstance(image, np.ndarray), 'data structure wrong'
-        # print(center)
-        # print(self.fx, self.fy)
-        du = cube_size / center[2] * self.fx
-        dv = cube_size / center[2] * self.fy
-        # print(du, dv)
-        left = int(center[0] - du)
-        right = int(center[0] + du)
-        top = int(center[1] - dv)
-        buttom = int(center[1] + dv)
-        # print(left, right, top, bottom)
-        # print(self.halfu, self.halfv)
-        left = max(left, 0)
-        top = max(top, 0)
-        right = min(right, self.halfu * 2)
-        buttom = min(buttom, self.halfv * 2)
-        # print(left, right, top, bottom)
-        MM = np.zeros_like(image)
-        # print(image.shape, MM.shape)
-        MM[top:buttom, left:right] = 1
-        # print(image.shape, MM.shape)
-        image = image * MM
 
-        # print('finish 2')
+        if self.dataset == 'val' or self.dataset == 'test':
+            # ground truth should not be used, perform a imperical threshold here
+            # MM = np.logical_and(image < 600, image > 100)
+            # image = image * MM
+            result = re.findall(r'depth_1_(\d+)', path)
+            index = int(result[0]) - 1
+            com = self.centers[index]
+        else:
+            # # crop the image by boundary box
+            # uv = joint_uvd[:, :2]
+            # left, top = np.min(uv, axis=0) - 20
+            # right, buttom = np.max(uv, axis=0) + 20
+            # left = max(int(left), 0)
+            # top = max(int(top), 0)
+            # right = min(int(right), 320)
+            # buttom = min(int(buttom), 240)
+            # MM = np.zeros(image.shape)
+            # MM[top:buttom, left:right] = 1
+            # image = image * MM
+            com = np.mean(joint_uvd, axis=0)    
 
-        MM = np.logical_and(image < center[2] + cube_size, image > center[2] - cube_size)
-        image = image * MM
+        # du = cube_size / center[2] * self.fx
+        # dv = cube_size / center[2] * self.fy
+        # left = int(center[0] - du)
+        # right = int(center[0] + du)
+        # top = int(center[1] - dv)
+        # buttom = int(center[1] + dv)
+        # left = max(left, 0)
+        # top = max(top, 0)
+        # right = min(right, self.halfu * 2)
+        # buttom = min(buttom, self.halfv * 2)
+        # MM = np.zeros_like(image)
+        # MM[top:buttom, left:right] = 1
+        # image = image * MM
 
-        # print('finish 3')
+        # MM = np.logical_and(image < center[2] + cube_size, image > center[2] - cube_size)
+        # image = image * MM
 
-        # # if self.dataset == 'val' or self.dataset == 'test':
-        # if True:
-        #     # ground truth should not be used, perform a imperical threshold here
-        #     MM = np.logical_and(image < 1200, image > 300)
-        #     image = image * MM
-        # else:
-        #     # crop the image by boundary box
-        #     uv = joint_uvd[:, :2]
-        #     left, top = np.min(uv, axis=0) - 80
-        #     right, buttom = np.max(uv, axis=0) + 80
-        #     left = max(int(left), 0)
-        #     top = max(int(top), 0)
-        #     right = min(int(right), self.halfu * 2)
-        #     buttom = min(int(buttom), self.halfv * 2)
-        #     MM = np.zeros(image.shape)
-        #     MM[top:buttom, left:right] = 1
-        #     image = image * MM
-
-        # # remove the background in the boundary box
-        # depth = joint_uvd[:, 2]
-        # depth_max = np.max(depth)
-        # depth_min = np.min(depth)
-        # image[image > depth_max + 100] = 0
-        # image[image < depth_min - 100] = 0
-
-        return image, joint_uvd
+        return image, joint_uvd, com
 
 class HAND17Dataset(HandDataset):
     def __init__(self, fx = 475.065948, fy = 475.065857, halfu = 315.944855, halfv = 245.287079, path="Data/HAND17/", 
                 sigmoid=1.5, image_size=128, kernel_size=7, label_size=64, 
                 test_only=False, using_rotation=False, using_scale=False, using_flip=False, 
-                scale_factor=100000, threshold=150, joint_number=21, dataset='train'):
+                cube_size=150, joint_number=21, dataset='train'):
 
         super(HAND17Dataset, self).__init__(fx, fy, halfu, halfv, path, sigmoid, image_size, kernel_size,
-                label_size, test_only, using_rotation, using_scale, using_flip, scale_factor, 
-                threshold, joint_number, process_mode='uvd' if dataset == 'train' else 'bb', dataset=dataset)
+                label_size, test_only, using_rotation, using_scale, using_flip, 
+                cube_size, joint_number, process_mode='uvd' if dataset == 'train' else 'bb', dataset=dataset)
 
         Index = [0, 2, 9, 10, 11]
         Mid = [0, 3, 12, 13, 14]
@@ -835,7 +846,6 @@ class HAND17Dataset(HandDataset):
 
     def load_from_text_bb(self, text):
         l = text.strip().split()
-        # print(l)
         path = l[0]
         ustart, vstart, du, dv = map(float, l[1:])
 
