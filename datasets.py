@@ -473,8 +473,11 @@ class ICVLDataset(HandDataset):
             with open(os.path.join(self.path, "test.txt"), 'w') as f:
                 f.write("\n".join(test_set))
 
+            with open(os.path.join(self.path, "val.txt"), 'w') as f:
+                f.write("\n".join(test_set))
+
         if not os.path.exists(os.path.join(self.path, "train.txt")):
-            print("building text.txt ...")
+            print("building train.txt ...")
 
             datatexts = []
             with open(os.path.join(self.path, "Training", "labels.txt"), 'r') as f:
@@ -510,12 +513,6 @@ class ICVLDataset(HandDataset):
             
             print('{} / {} data can use to train'.format(len(traintxt), len(datatexts)))
 
-            valtxt = traintxt[:1024]
-            traintxt = traintxt[1024:]
-
-            with open(os.path.join(self.path, "val.txt"), 'w') as f:
-                f.write("\n".join(valtxt))
-
             with open(os.path.join(self.path, "train.txt"), 'w') as f:
                 f.write("\n".join(traintxt))
         
@@ -532,18 +529,25 @@ class ICVLDataset(HandDataset):
         except:
             print("{} do not exist!".format(path))
             raise ValueError("file do not exist")
-
-        # crop the image by boundary box
-        uv = joint_uvd[:, :2]
-        left, top = np.min(uv, axis=0) - 20
-        right, buttom = np.max(uv, axis=0) + 20
-        left = max(int(left), 0)
-        top = max(int(top), 0)
-        right = min(int(right), 320)
-        buttom = min(int(buttom), 240)
-        MM = np.zeros(image.shape)
-        MM[top:buttom, left:right] = 1
-        image = image * MM
+        
+        # if self.test_only:
+        # if False:
+        if self.dataset == 'val' or self.dataset == 'test':
+            # ground truth should not be used, perform a imperical threshold here
+            MM = np.logical_and(image < 600, image > 100)
+            image = image * MM
+        else:
+            # crop the image by boundary box
+            uv = joint_uvd[:, :2]
+            left, top = np.min(uv, axis=0) - 20
+            right, buttom = np.max(uv, axis=0) + 20
+            left = max(int(left), 0)
+            top = max(int(top), 0)
+            right = min(int(right), 320)
+            buttom = min(int(buttom), 240)
+            MM = np.zeros(image.shape)
+            MM[top:buttom, left:right] = 1
+            image = image * MM
 
         # remove the background in the boundary box
         depth = joint_uvd[:, 2]
@@ -555,12 +559,13 @@ class ICVLDataset(HandDataset):
         return image, joint_uvd
 
 class NYUDataset(HandDataset):
-    def __init__(self, fx = 241.42, fy = 241.42, halfu = 320, halfv = 240, path="Data/NYU/", 
+    def __init__(self, fx = 588.037, fy =587.075, halfu = 320, halfv = 240, path="Data/NYU/", 
                 sigmoid=1.5, image_size=128, kernel_size=7, label_size=64, 
                 test_only=False, using_rotation=False, using_scale=False, using_flip=False, 
-                scale_factor=180000, threshold=300, joint_number=14, dataset='train'):
+                scale_factor=200000, threshold=300, joint_number=14, dataset='train'):
         # TODO scale_factor and threshold need to be further tuned
-        
+        self.index = [0, 3, 6, 9, 12, 15, 18, 21, 24, 25, 27, 30, 31, 32]
+
         super(NYUDataset, self).__init__(fx, fy, halfu, halfv, path, sigmoid, image_size, kernel_size,
                 label_size, test_only, using_rotation, using_scale, using_flip, scale_factor, 
                 threshold, joint_number, process_mode='uvd', dataset=dataset)
@@ -572,109 +577,92 @@ class NYUDataset(HandDataset):
         Thumb = [13, 10, 9, 8]
         PALM = [11, 13, 12]
         self.config = [Thumb, Index, Mid, Ring, Small, PALM]
-        self.index = [0, 3, 6, 9, 12, 15, 18, 21, 24, 25, 27, 30, 31, 32]
-
-    def _build_bin(self, input_name, output_name, center, threshold, uvd):
-        try:
-            _image = plt.imread(input_name)
-        except:
-            return False
-        image = (_image[:,:,1] * 256 + _image[:,:,2]) * 255
-        uv = uvd[:, :2]
-        left, top = np.min(uv, axis=0) - 20
-        right, buttom = np.max(uv, axis=0) + 20
-        left = max(int(left), 0)
-        top = max(int(top), 0)
-        right = min(int(right), 2 * self.halfu)
-        buttom = min(int(buttom), 2 * self.halfv)
-        MM = np.zeros(image.shape)
-        MM[top:buttom, left:right] = 1
-        image = image * MM
-        Mask = floodFillDepth(image, center, threshold)
-        if np.sum(Mask) > 200:
-            image = image * Mask
-        index = np.argwhere(image > 0)
-        top, left = np.min(index, axis=0)
-        bottum, right = np.max(index, axis=0) + 1
-        # write the bin file
-        with open(output_name, 'wb') as f:
-            data = struct.pack('i', 640)
-            f.write(data)
-            data = struct.pack('i', 480)
-            f.write(data)
-            data = struct.pack('i', left)
-            f.write(data)
-            data = struct.pack('i', top)
-            f.write(data)
-            data = struct.pack('i', right)
-            f.write(data)
-            data = struct.pack('i', bottum)
-            f.write(data)
-            for i in range(top, bottum):
-                for j in range(left, right):
-                    data = struct.pack('f', image[i, j])
-                    f.write(data)
-        return True
 
     def build_data(self):
         if self.data_ready:
             print("Data is Already build~")
             return
-        pool = mp.Pool(processes=os.cpu_count())
+
         if not os.path.exists(os.path.join(self.path, "train.txt")):
+            print("building train.txt ...")
             mat = loadmat(os.path.join(self.path, "train", "joint_data.mat"))
             uvds = mat['joint_uvd'][0]
-            training_set = []
-            os.mkdir(os.path.join(self.path, "bin_train"))
-            processing = []
+            datatexts = []
             for i in range(uvds.shape[0]):
                 uvd = uvds[i]
                 png = "depth_1_%07d.png" % (i+1)
-                name = os.path.join(self.path, "bin_train", "%07d.bin" % (i+1))
-                center = (int(float(uvd[32, 1])), int(float(uvd[32, 0])))
-                r = pool.apply_async(self._build_bin, (os.path.join(self.path, "train", png), name, center, 100, uvd.copy()))
-                # self._build_bin(os.path.join(self.path, "Training", "Depth", path), name, center)
+                filename = os.path.join(self.path, "train", png)
+                center = np.mean(uvd, axis=0, keepdims=True)
                 uvd = uvd[self.index]
-                uvd = uvd.reshape((42,))
+                uvd = np.concatenate([uvd, center], axis=0)
+                uvd = uvd.reshape((-1,))
                 words = [str(uvd[j]) for j in range(uvd.shape[0])]
-                words = [name] + words
-                processing.append((r, words))
+                words = [filename] + words
+                datatexts.append(" ".join(words))
 
-            for r, words in processing:
-                if r.get():
-                    training_set.append(" ".join(words))
+            print('checking data ......')
+
+            pool = mp.Pool(processes=os.cpu_count())
+            processing = []
+            for text in datatexts:
+                r = pool.apply_async(self.check_text, (text, ))
+                processing.append(r)
+
+            traintxt = []
+            with tqdm(total=len(datatexts)) as pbar:
+                for r in processing:
+                    text = r.get()
+                    if text:
+                        traintxt.append(text)
+                    pbar.update(1)
+            pool.close()
+            
+            print('{} / {} data can use to train'.format(len(traintxt), len(datatexts)))
 
             with open(os.path.join(self.path, "train.txt"), 'w') as f:
-                f.write("\n".join(training_set))
+                f.write("\n".join(traintxt))
 
         if not os.path.exists(os.path.join(self.path, "test.txt")):
-            os.mkdir(os.path.join(self.path, "bin_test"))
             test_set = []
-            processing = []
             mat = loadmat(os.path.join(self.path, "test", "joint_data.mat"))
             uvds = mat['joint_uvd'][0]
             for i in range(uvds.shape[0]):
                 uvd = uvds[i]
                 png = "depth_1_%07d.png" % (i+1)
-                name = os.path.join(self.path, "bin_test", "%07d.bin" % (i+1))
-                center = (int(float(uvd[32, 1])), int(float(uvd[32, 0])))
-                r = pool.apply_async(self._build_bin, (os.path.join(self.path, "test", png), name, center, 100, uvd.copy()))
-                # self._build_bin(os.path.join(self.path, "Training", "Depth", path), name, center)
+                filename = os.path.join(self.path, "test", png)
+                center = np.mean(uvd, axis=0, keepdims=True)
                 uvd = uvd[self.index]
-                uvd = uvd.reshape((42,))
+                uvd = np.concatenate([uvd, center], axis=0)
+                uvd = uvd.reshape((-1,))
                 words = [str(uvd[j]) for j in range(uvd.shape[0])]
-                words = [name] + words
-                processing.append((r, words))
-
-            for r, words in processing:
-                if r.get():
-                    test_set.append(" ".join(words)) 
+                words = [filename] + words
+                test_set.append(" ".join(words)) 
                     
             with open(os.path.join(self.path, "test.txt"), 'w') as f:
                 f.write("\n".join(test_set))
 
-        pool.close()
-        pool.join()
+            print('checking data ......')
+
+            pool = mp.Pool(processes=os.cpu_count())
+            processing = []
+            for text in test_set:
+                r = pool.apply_async(self.check_text, (text, ))
+                processing.append(r)
+
+            valtxt = []
+            with tqdm(total=len(test_set)) as pbar:
+                for r in processing:
+                    text = r.get()
+                    if text:
+                        valtxt.append(text)
+                    pbar.update(1)
+            pool.close()
+            
+            print('{} / {} data can use as valadation'.format(len(valtxt), len(test_set)))
+
+            with open(os.path.join(self.path, "val.txt"), 'w') as f:
+                f.write("\n".join(valtxt))
+
         
     def load_from_text(self, text):
         """
@@ -682,11 +670,83 @@ class NYUDataset(HandDataset):
         OUTPUT:
             image, uvd
         """
-        path, joint_uvd = super().decode_line_txt(text)
-        img, left, top, right, bottom = load_bin(path)
+        # path, joint_uvd = super().decode_line_txt(text)
+        # img, left, top, right, bottom = load_bin(path)
 
-        image = np.zeros((self.halfv * 2, self.halfu * 2))
-        image[top:bottom, left:right] = img.copy()
+        # image = np.zeros((self.halfv * 2, self.halfu * 2))
+        # image[top:bottom, left:right] = img.copy()
+        # return image, joint_uvd
+
+        cube_size = 150
+
+        path, joint_uvd = super().decode_line_txt(text)
+
+        center = joint_uvd[-1]
+        joint_uvd = joint_uvd[:-1]
+        # print('finish 1')
+
+        try:
+            _image = plt.imread(path)
+            image = (_image[:,:,1] * 256 + _image[:,:,2]) * 255
+        except:
+            print("{} do not exist!".format(path))
+            raise ValueError("file do not exist")
+        
+        # assert isinstance(image, np.ndarray), 'data structure wrong'
+        # print(center)
+        # print(self.fx, self.fy)
+        du = cube_size / center[2] * self.fx
+        dv = cube_size / center[2] * self.fy
+        # print(du, dv)
+        left = int(center[0] - du)
+        right = int(center[0] + du)
+        top = int(center[1] - dv)
+        buttom = int(center[1] + dv)
+        # print(left, right, top, bottom)
+        # print(self.halfu, self.halfv)
+        left = max(left, 0)
+        top = max(top, 0)
+        right = min(right, self.halfu * 2)
+        buttom = min(buttom, self.halfv * 2)
+        # print(left, right, top, bottom)
+        MM = np.zeros_like(image)
+        # print(image.shape, MM.shape)
+        MM[top:buttom, left:right] = 1
+        # print(image.shape, MM.shape)
+        image = image * MM
+
+        # print('finish 2')
+
+        MM = np.logical_and(image < center[2] + cube_size, image > center[2] - cube_size)
+        image = image * MM
+
+        # print('finish 3')
+
+        # # if self.dataset == 'val' or self.dataset == 'test':
+        # if True:
+        #     # ground truth should not be used, perform a imperical threshold here
+        #     MM = np.logical_and(image < 1200, image > 300)
+        #     image = image * MM
+        # else:
+        #     # crop the image by boundary box
+        #     uv = joint_uvd[:, :2]
+        #     left, top = np.min(uv, axis=0) - 80
+        #     right, buttom = np.max(uv, axis=0) + 80
+        #     left = max(int(left), 0)
+        #     top = max(int(top), 0)
+        #     right = min(int(right), self.halfu * 2)
+        #     buttom = min(int(buttom), self.halfv * 2)
+        #     MM = np.zeros(image.shape)
+        #     MM[top:buttom, left:right] = 1
+        #     image = image * MM
+
+        # # remove the background in the boundary box
+        # depth = joint_uvd[:, 2]
+        # depth_max = np.max(depth)
+        # depth_min = np.min(depth)
+        # image[image > depth_max + 100] = 0
+        # image[image < depth_min - 100] = 0
+
         return image, joint_uvd
 
 class HAND17Dataset(HandDataset):
