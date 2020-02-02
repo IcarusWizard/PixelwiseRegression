@@ -73,7 +73,8 @@ if __name__ == '__main__':
 
     joints = testset.joint_number
     config = testset.config
-    threshold = testset.threshold
+    # threshold = testset.threshold
+    threshold = testset.cube_size
 
     test_loader = torch.utils.data.DataLoader(testset, **test_loader_parameters)
 

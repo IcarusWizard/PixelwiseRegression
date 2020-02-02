@@ -201,9 +201,15 @@ class HandDataset(torch.utils.data.Dataset):
 
         crop_img = crop_img * np.logical_and(crop_img > com[2] - cube_size, crop_img < com[2] + cube_size)
 
+        if self.using_scale:
+            com[2] = com[2] + (np.random.rand(1) * 100 - 50)
+
         # norm the image and uvd to COM
         crop_img[crop_img > 0] -= com[2] # center the depth image to COM
         
+        com[0] = int(com[0])
+        com[1] = int(com[1])
+
         box_size = crop_img.shape[0] # update box_size
 
         # try:
@@ -557,6 +563,7 @@ class ICVLDataset(HandDataset):
             raise ValueError("file do not exist")
         
         if self.dataset == 'val' or self.dataset == 'test':
+        # if self.dataset == 'test':
             # ground truth should not be used, perform a imperical threshold here
             # MM = np.logical_and(image < 600, image > 100)
             # image = image * MM
@@ -580,6 +587,25 @@ class ICVLDataset(HandDataset):
             # image = image * MM
             com = np.mean(joint_uvd, axis=0)
 
+        cube_size = self.cube_size
+
+        du = cube_size / com[2] * self.fx
+        dv = cube_size / com[2] * self.fy
+        left = int(com[0] - du)
+        right = int(com[0] + du)
+        top = int(com[1] - dv)
+        buttom = int(com[1] + dv)
+        left = max(left, 0)
+        top = max(top, 0)
+        right = min(right, self.halfu * 2)
+        buttom = min(buttom, self.halfv * 2)
+        MM = np.zeros_like(image)
+        MM[top:buttom, left:right] = 1
+        image = image * MM
+
+        MM = np.logical_and(image < com[2] + cube_size, image > com[2] - cube_size)
+        image = image * MM
+
         # # remove the background in the boundary box
         # depth = joint_uvd[:, 2]
         # depth_max = np.max(depth)
@@ -587,7 +613,7 @@ class ICVLDataset(HandDataset):
         # image[image > depth_max + 50] = 0
         # image[image < depth_min - 50] = 0
 
-        return image, joint_uvd, com
+        return image, joint_uvd, None
 
 class NYUDataset(HandDataset):
     def __init__(self, fx = 588.037, fy =587.075, halfu = 320, halfv = 240, path="Data/NYU/", 
@@ -706,7 +732,7 @@ class NYUDataset(HandDataset):
             image, uvd
         """
 
-        cube_size = 150
+        cube_size = self.cube_size
 
         path, joint_uvd = super().decode_line_txt(text)
 
@@ -741,24 +767,24 @@ class NYUDataset(HandDataset):
             # image = image * MM
             com = np.mean(joint_uvd, axis=0)    
 
-        # du = cube_size / center[2] * self.fx
-        # dv = cube_size / center[2] * self.fy
-        # left = int(center[0] - du)
-        # right = int(center[0] + du)
-        # top = int(center[1] - dv)
-        # buttom = int(center[1] + dv)
-        # left = max(left, 0)
-        # top = max(top, 0)
-        # right = min(right, self.halfu * 2)
-        # buttom = min(buttom, self.halfv * 2)
-        # MM = np.zeros_like(image)
-        # MM[top:buttom, left:right] = 1
-        # image = image * MM
+        du = cube_size / com[2] * self.fx
+        dv = cube_size / com[2] * self.fy
+        left = int(com[0] - du)
+        right = int(com[0] + du)
+        top = int(com[1] - dv)
+        buttom = int(com[1] + dv)
+        left = max(left, 0)
+        top = max(top, 0)
+        right = min(right, self.halfu * 2)
+        buttom = min(buttom, self.halfv * 2)
+        MM = np.zeros_like(image)
+        MM[top:buttom, left:right] = 1
+        image = image * MM
 
-        # MM = np.logical_and(image < center[2] + cube_size, image > center[2] - cube_size)
-        # image = image * MM
+        MM = np.logical_and(image < com[2] + cube_size, image > com[2] - cube_size)
+        image = image * MM
 
-        return image, joint_uvd, com
+        return image, joint_uvd, None
 
 class HAND17Dataset(HandDataset):
     def __init__(self, fx = 475.065948, fy = 475.065857, halfu = 315.944855, halfv = 245.287079, path="Data/HAND17/", 
