@@ -202,7 +202,7 @@ class HandDataset(torch.utils.data.Dataset):
         crop_img = crop_img * np.logical_and(crop_img > com[2] - cube_size, crop_img < com[2] + cube_size)
 
         if self.using_scale:
-            com[2] = com[2] + (np.random.rand(1) * 100 - 50)
+            com[2] = com[2] + np.random.rand(1) * 50 - 25
 
         # norm the image and uvd to COM
         crop_img[crop_img > 0] -= com[2] # center the depth image to COM
@@ -455,6 +455,10 @@ class ICVLDataset(HandDataset):
                 test_only=False, using_rotation=False, using_scale=False, using_flip=False, 
                 cube_size=150, joint_number=16, dataset='train'):
 
+        with open(os.path.join(path, 'icvl_center.txt'), 'r') as f:
+            centers = f.readlines()
+        self.centers = np.array(list(map(lambda x: list(map(float, x.strip().split())), centers)))
+
         super(ICVLDataset, self).__init__(fx, fy, halfu, halfv, path, sigmoid, image_size, kernel_size,
                 label_size, test_only, using_rotation, using_scale, using_flip, 
                 cube_size, joint_number, process_mode='uvd', dataset=dataset)
@@ -466,17 +470,19 @@ class ICVLDataset(HandDataset):
         Thumb = [0, 1, 2, 3]
         self.config = [Thumb, Index, Mid, Ring, Small]
 
-        if dataset == 'val' or dataset == 'test':
-            with open(os.path.join(self.path, 'icvl_center.txt'), 'r') as f:
-                centers = f.readlines()
-            self.centers = np.array(list(map(lambda x: list(map(float, x.strip().split())), centers)))
+        with open(os.path.join(self.path, 'icvl_center.txt'), 'r') as f:
+            centers = f.readlines()
+        self.centers = np.array(list(map(lambda x: list(map(float, x.strip().split())), centers)))
 
     def build_data(self):
         if self.data_ready:
             print("Data is Already build~")
             return
 
+        dataset = self.dataset
+
         if not os.path.exists(os.path.join(self.path, "test.txt")):
+            self.dataset = 'test'
             print("building text.txt ...")
             test_set = []
             with open(os.path.join(self.path, "Testing", "test_seq_1.txt"), "r") as f:
@@ -509,6 +515,7 @@ class ICVLDataset(HandDataset):
                 f.write("\n".join(test_set))
 
         if not os.path.exists(os.path.join(self.path, "train.txt")):
+            self.dataset = 'train'
             print("building train.txt ...")
 
             datatexts = []
@@ -547,6 +554,8 @@ class ICVLDataset(HandDataset):
 
             with open(os.path.join(self.path, "train.txt"), 'w') as f:
                 f.write("\n".join(traintxt))
+
+        self.dataset = dataset
         
     def load_from_text(self, text):
         """
@@ -619,8 +628,12 @@ class NYUDataset(HandDataset):
     def __init__(self, fx = 588.037, fy =587.075, halfu = 320, halfv = 240, path="Data/NYU/", 
                 sigmoid=1.5, image_size=128, kernel_size=7, label_size=64, 
                 test_only=False, using_rotation=False, using_scale=False, using_flip=False, 
-                cube_size=150, joint_number=14, dataset='train'):
+                cube_size=175, joint_number=14, dataset='train'):
         self.index = [0, 3, 6, 9, 12, 15, 18, 21, 24, 25, 27, 30, 31, 32]
+
+        with open(os.path.join(path, 'nyu_center.txt'), 'r') as f:
+            centers = f.readlines()
+        self.centers = np.array(list(map(lambda x: list(map(float, x.strip().split())), centers)))
 
         super(NYUDataset, self).__init__(fx, fy, halfu, halfv, path, sigmoid, image_size, kernel_size,
                 label_size, test_only, using_rotation, using_scale, using_flip, 
@@ -634,17 +647,15 @@ class NYUDataset(HandDataset):
         PALM = [11, 13, 12]
         self.config = [Thumb, Index, Mid, Ring, Small, PALM]
 
-        if dataset == 'val' or dataset == 'test':
-            with open(os.path.join(self.path, 'nyu_center.txt'), 'r') as f:
-                centers = f.readlines()
-            self.centers = np.array(list(map(lambda x: list(map(float, x.strip().split())), centers)))
-
     def build_data(self):
         if self.data_ready:
             print("Data is Already build~")
             return
 
+        dataset = self.dataset
+
         if not os.path.exists(os.path.join(self.path, "train.txt")):
+            self.dataset = 'train'
             print("building train.txt ...")
             mat = loadmat(os.path.join(self.path, "train", "joint_data.mat"))
             uvds = mat['joint_uvd'][0]
@@ -684,6 +695,7 @@ class NYUDataset(HandDataset):
                 f.write("\n".join(traintxt))
 
         if not os.path.exists(os.path.join(self.path, "test.txt")):
+            self.dataset = 'test'
             test_set = []
             mat = loadmat(os.path.join(self.path, "test", "joint_data.mat"))
             uvds = mat['joint_uvd'][0]
@@ -724,6 +736,7 @@ class NYUDataset(HandDataset):
             with open(os.path.join(self.path, "val.txt"), 'w') as f:
                 f.write("\n".join(valtxt))
 
+        self.dataset = dataset
         
     def load_from_text(self, text):
         """
@@ -732,7 +745,7 @@ class NYUDataset(HandDataset):
             image, uvd
         """
 
-        cube_size = self.cube_size
+        cube_size = 150
 
         path, joint_uvd = super().decode_line_txt(text)
 
@@ -753,6 +766,7 @@ class NYUDataset(HandDataset):
             result = re.findall(r'depth_1_(\d+)', path)
             index = int(result[0]) - 1
             com = self.centers[index]
+            # print(com - np.mean(joint_uvd, axis=0))
         else:
             # # crop the image by boundary box
             # uv = joint_uvd[:, :2]
