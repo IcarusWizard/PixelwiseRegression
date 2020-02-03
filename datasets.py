@@ -202,7 +202,7 @@ class HandDataset(torch.utils.data.Dataset):
         crop_img = crop_img * np.logical_and(crop_img > com[2] - cube_size, crop_img < com[2] + cube_size)
 
         if self.using_scale:
-            com[2] = com[2] + np.random.rand(1) * 50 - 25
+            com[2] = com[2] + np.random.rand(1) * 100 - 50
 
         # norm the image and uvd to COM
         crop_img[crop_img > 0] -= com[2] # center the depth image to COM
