@@ -161,12 +161,16 @@ class PixelwiseRegression(torch.nn.Module):
 
         conv_features = 32
         while conv_features < features:
+            next_features = min(2 * conv_features, features)
             init_conv.extend([
-                torch.nn.Conv2d(conv_features, 2 * conv_features, 3, stride=1, padding=1),
-                norm(2 * conv_features, affine=True),
+                # torch.nn.Conv2d(conv_features, 2 * conv_features, 3, stride=1, padding=1),
+                torch.nn.Conv2d(conv_features, next_features, 3, stride=1, padding=1),
+                # norm(2 * conv_features, affine=True),
+                norm(next_features, affine=True),
                 torch.nn.ReLU(True)
             ])
-            conv_features *= 2
+            # conv_features *= 2
+            conv_features = next_features
 
         init_conv.extend([
             torch.nn.Conv2d(features, features, 3, stride=2, padding=1),
