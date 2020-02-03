@@ -658,19 +658,20 @@ class NYUDataset(HandDataset):
             self.dataset = 'train'
             print("building train.txt ...")
             mat = loadmat(os.path.join(self.path, "train", "joint_data.mat"))
-            uvds = mat['joint_uvd'][0]
             datatexts = []
-            for i in range(uvds.shape[0]):
-                uvd = uvds[i]
-                png = "depth_1_%07d.png" % (i+1)
-                filename = os.path.join(self.path, "train", png)
-                center = np.mean(uvd, axis=0, keepdims=True)
-                uvd = uvd[self.index]
-                uvd = np.concatenate([uvd, center], axis=0)
-                uvd = uvd.reshape((-1,))
-                words = [str(uvd[j]) for j in range(uvd.shape[0])]
-                words = [filename] + words
-                datatexts.append(" ".join(words))
+            for j in range(3):
+                uvds = mat['joint_uvd'][j]
+                for i in range(uvds.shape[0]):
+                    uvd = uvds[i]
+                    png = "depth_%d_%07d.png" % (j+1, i+1)
+                    filename = os.path.join(self.path, "train", png)
+                    # center = np.mean(uvd, axis=0, keepdims=True)
+                    uvd = uvd[self.index]
+                    # uvd = np.concatenate([uvd, center], axis=0)
+                    uvd = uvd.reshape((-1,))
+                    words = [str(uvd[j]) for j in range(uvd.shape[0])]
+                    words = [filename] + words
+                    datatexts.append(" ".join(words))
 
             print('checking data ......')
 
@@ -703,9 +704,9 @@ class NYUDataset(HandDataset):
                 uvd = uvds[i]
                 png = "depth_1_%07d.png" % (i+1)
                 filename = os.path.join(self.path, "test", png)
-                center = np.mean(uvd, axis=0, keepdims=True)
+                # center = np.mean(uvd, axis=0, keepdims=True)
                 uvd = uvd[self.index]
-                uvd = np.concatenate([uvd, center], axis=0)
+                # uvd = np.concatenate([uvd, center], axis=0)
                 uvd = uvd.reshape((-1,))
                 words = [str(uvd[j]) for j in range(uvd.shape[0])]
                 words = [filename] + words
@@ -749,8 +750,8 @@ class NYUDataset(HandDataset):
 
         path, joint_uvd = super().decode_line_txt(text)
 
-        center = joint_uvd[-1]
-        joint_uvd = joint_uvd[:-1]
+        # center = joint_uvd[-1]
+        # joint_uvd = joint_uvd[:-1]
 
         try:
             _image = plt.imread(path)
