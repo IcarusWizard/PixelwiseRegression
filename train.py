@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 from model import PixelwiseRegression
 import datasets
-from utils import setup_seed, step_loader, save_model, draw_skeleton_torch, select_gpus, draw_features_torch
+from utils import setup_seed, step_loader, save_model, draw_skeleton_torch, select_gpus, draw_features_torch, recover_uvd
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -127,7 +127,7 @@ if __name__ == '__main__':
     model = model.to(device)
 
     if args.opt == 'adam':
-        optim = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(args.beta1, args.beta2), weight_decay=args.weight_decay)
+        optim = torch.optim.AdamW(model.parameters(), lr=args.lr, betas=(args.beta1, args.beta2), weight_decay=args.weight_decay)
     elif args.opt == 'sgd':
         optim = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=args.beta1, weight_decay=args.weight_decay)
 
@@ -198,8 +198,10 @@ if __name__ == '__main__':
                 num = 0
 
                 val_every_loss = []
+                dataset_results = []
                 for i in range(len(results)):
                     val_every_loss.append((0, 0, 0))
+                    dataset_results.append([])
 
                 for val_batch in iter(val_loader):
                     num += 1
@@ -214,6 +216,12 @@ if __name__ == '__main__':
 
                     results = model(img, label_img, mask)
 
+                    true_uvd = uvd.cpu()
+                    true_uvd = recover_uvd(true_uvd, box_size, com, valset.cube_size)
+                    true_uvd = true_uvd.numpy()
+
+                    true_xyz = valset.uvd2xyz(true_uvd)
+
                     for i, result in enumerate(results):
                         _heatmaps, _depthmaps, _uvd = result
                         # heatmap_loss = args.lambda_h * torch.mean((_heatmaps - heatmaps) ** 2)
@@ -227,6 +235,13 @@ if __name__ == '__main__':
                             _heatmaps_loss + heatmap_loss, 
                             _depthmap_loss + depthmap_loss, 
                             _uvd_loss + uvd_loss))
+
+                        _uvd = _uvd.cpu()
+                        _uvd = recover_uvd(_uvd, box_size, com, valset.cube_size)
+                        _uvd = _uvd.numpy()
+
+                        _xyz = valset.uvd2xyz(_uvd)
+                        dataset_results[i].append(np.mean(np.sqrt(np.sum((_xyz - true_xyz) ** 2, axis=2)), axis=1))
                 
                 for i in range(len(results)):
                     _heatmaps_loss, _depthmap_loss, _uvd_loss = val_every_loss[i]
@@ -234,6 +249,8 @@ if __name__ == '__main__':
                         _heatmaps_loss / num, 
                         _depthmap_loss / num, 
                         _uvd_loss / num))
+
+                    dataset_results[i] = np.mean(np.concatenate(dataset_results[i], axis=0))
 
                 val_loss = 0
                 for losses in val_every_loss:
@@ -258,6 +275,7 @@ if __name__ == '__main__':
                     {'train' : train_uvd_loss, 'val' : val_uvd_loss},
                     global_step=epoch
                 )
+                writer.add_scalar('stage{}_result'.format(i), dataset_results[i], global_step=epoch)
 
             save_model(model, os.path.join('Model', model_name.format(epoch)), seed=seed, model_param=model_parameters)
 
