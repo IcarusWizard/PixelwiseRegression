@@ -35,6 +35,7 @@ if __name__ == '__main__':
     parser.add_argument('--using_rotation', action='store_true')
     parser.add_argument('--using_scale', action='store_true')
     parser.add_argument('--using_flip', action='store_true')
+    parser.add_argument('--small', action='store_true')
 
     parser.add_argument('--gpu_id', type=str, default="0")
     parser.add_argument('--epoch', type=int, default=30)
@@ -61,7 +62,7 @@ if __name__ == '__main__':
     setup_seed(seed) 
 
     trainset_parameters = {
-        "dataset" : "train",
+        "dataset" : "train" if not args.small else "small_train",
         "image_size" : args.label_size * 2,
         "label_size" : args.label_size,
         "kernel_size" : args.kernel_size,
@@ -72,7 +73,7 @@ if __name__ == '__main__':
     }
 
     valset_parameters = {
-        "dataset" : "val",
+        "dataset" : "val" if not args.small else "small_val",
         "image_size" : args.label_size * 2,
         "label_size" : args.label_size,
         "kernel_size" : args.kernel_size,
