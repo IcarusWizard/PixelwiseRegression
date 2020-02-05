@@ -53,6 +53,9 @@ if __name__ == '__main__':
     parser.add_argument('--lambda_d', type=float, default=1.0)
     parser.add_argument('--alpha', type=float, default=0.5)
 
+    parser.add_argument('--lr_decay', type=float, default=1)
+    parser.add_argument('--decay_epoch', type=float, default=10)
+
     args = parser.parse_args()
 
     if not os.path.exists('Model'):
@@ -132,6 +135,7 @@ if __name__ == '__main__':
     elif args.opt == 'sgd':
         optim = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=args.beta1, weight_decay=args.weight_decay)
 
+    scheduler = torch.optim.lr_scheduler.StepLR(optim, step_size=args.decay_epoch, gamma=args.lr_decay)
     writer = SummaryWriter('logs/{}'.format(log_name))
 
     steps_per_epoch = len(trainset) // args.batch_size
@@ -176,6 +180,7 @@ if __name__ == '__main__':
                 optim.step()
 
                 pbar.update(1)
+            scheduler.step()
 
             # log image results in tensorboard
             writer.add_images('input_image', img, global_step=epoch)
