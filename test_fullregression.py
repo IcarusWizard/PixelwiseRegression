@@ -27,7 +27,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--gpu_id', type=str, default='0')
     parser.add_argument("--num_workers", type=int, default=9999)
-    parser.add_argument('--stages', type=int, default=2)
+    parser.add_argument('--stages', type=int, default=1)
     parser.add_argument('--features', type=int, default=128)
     parser.add_argument('--level', type=int, default=4)
     parser.add_argument('--seed', type=str, default='final')
@@ -71,7 +71,7 @@ if __name__ == '__main__':
 
     joints = testset.joint_number
     config = testset.config
-    threshold = testset.threshold
+    threshold = testset.cube_size
 
     test_loader = torch.utils.data.DataLoader(testset, **test_loader_parameters)
 

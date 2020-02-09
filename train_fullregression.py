@@ -37,7 +37,7 @@ if __name__ == '__main__':
     parser.add_argument('--gpu_id', type=str, default='0')
     parser.add_argument('--epoch', type=int, default=30)
     parser.add_argument("--num_workers", type=int, default=9999)
-    parser.add_argument('--stages', type=int, default=2)
+    parser.add_argument('--stages', type=int, default=1)
     parser.add_argument('--features', type=int, default=128)
     parser.add_argument('--level', type=int, default=4)
 
@@ -51,7 +51,8 @@ if __name__ == '__main__':
     seed = args.seed if args.seed else np.random.randint(0, 100000)
     setup_seed(seed) 
 
-    dataset_parameters = {
+    trainset_parameters = {
+        "dataset" : "train",
         "image_size" : args.label_size * 2,
         "label_size" : args.label_size,
         "kernel_size" : args.kernel_size,
@@ -59,6 +60,17 @@ if __name__ == '__main__':
         "using_rotation" : args.using_rotation,
         "using_scale" : args.using_scale,
         "using_flip" : args.using_flip,
+    }
+
+    valset_parameters = {
+        "dataset" : "val",
+        "image_size" : args.label_size * 2,
+        "label_size" : args.label_size,
+        "kernel_size" : args.kernel_size,
+        "sigmoid" : args.sigmoid,
+        "using_rotation" : False,
+        "using_scale" : False,
+        "using_flip" : False,
     }
 
     train_loader_parameters = {
@@ -89,8 +101,8 @@ if __name__ == '__main__':
     model_name = log_name + "_{}.pt" 
 
     Dataset = getattr(datasets, "{}Dataset".format(args.dataset))
-    trainset = Dataset(dataset='train', **dataset_parameters)
-    valset = Dataset(dataset='val', **dataset_parameters)
+    trainset = Dataset(**trainset_parameters)
+    valset = Dataset(**valset_parameters)
 
     joints = trainset.joint_number
     config = trainset.config
@@ -130,7 +142,7 @@ if __name__ == '__main__':
                 every_loss = []
                 for i, result in enumerate(results):
                     _uvd = result
-                    uvd_loss = torch.mean((_uvd - uvd) ** 2)
+                    uvd_loss = torch.mean(torch.sum((_uvd - uvd) ** 2, dim=2))
                     every_loss.append(uvd_loss)
 
                 loss = 0
@@ -174,7 +186,7 @@ if __name__ == '__main__':
 
                     for i, result in enumerate(results):
                         _uvd = result
-                        uvd_loss = torch.mean((_uvd - uvd) ** 2)
+                        uvd_loss = torch.mean(torch.sum((_uvd - uvd) ** 2, dim=2))
                         _uvd_loss = val_every_loss[i]
                         val_every_loss[i] = _uvd_loss + uvd_loss
                 

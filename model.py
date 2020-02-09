@@ -4,15 +4,16 @@ from torch.functional import F
 from utils import generate_com_filter, xavier_weights_init
 
 class ResBlock(torch.nn.Module):
-    def __init__(self, features, norm=torch.nn.BatchNorm2d, inplace=True):
+    def __init__(self, features, kernel_size=3, norm=torch.nn.BatchNorm2d, inplace=True):
         super(ResBlock, self).__init__()
+        padding = kernel_size // 2
         self.conv = torch.nn.Sequential(
             norm(features, affine=True),
             torch.nn.ReLU(inplace),
             torch.nn.Conv2d(features, features // 2, 1, stride=1),
             norm(features // 2, affine=True),
             torch.nn.ReLU(inplace),
-            torch.nn.Conv2d(features // 2, features // 2, 3, stride=1, padding=1),
+            torch.nn.Conv2d(features // 2, features // 2, kernel_size, stride=1, padding=padding),
             norm(features // 2, affine=True),
             torch.nn.ReLU(inplace),
             torch.nn.Conv2d(features // 2, features, 1, stride=1)
@@ -22,17 +23,17 @@ class ResBlock(torch.nn.Module):
         return x + self.conv(x)
 
 class Hourglass(torch.nn.Module):
-    def __init__(self, features, level=4, norm=torch.nn.BatchNorm2d):
+    def __init__(self, features, level=4, kernel_size=3, norm=torch.nn.BatchNorm2d):
         super(Hourglass, self).__init__()
-        self.input_conv = ResBlock(features, norm=norm)
+        self.input_conv = ResBlock(features, kernel_size=kernel_size, norm=norm)
         self.down_sample = torch.nn.MaxPool2d(2, stride=2)
 
         if level > 0:
-            self.inner = Hourglass(features, level - 1, norm=norm)
+            self.inner = Hourglass(features, level - 1, kernel_size=kernel_size, norm=norm)
         else:
-            self.inner = ResBlock(features, norm=norm)
+            self.inner = ResBlock(features, kernel_size=kernel_size, norm=norm)
 
-        self.output_conv = ResBlock(features, norm=norm)
+        self.output_conv = ResBlock(features, kernel_size=kernel_size, norm=norm)
 
     def forward(self, x):
         x = self.input_conv(x)
@@ -46,20 +47,21 @@ class Hourglass(torch.nn.Module):
         return F.relu(h + x, inplace=True)
 
 class PlaneRegression(torch.nn.Module):
-    def __init__(self, features, joints, label_size, norm=torch.nn.BatchNorm2d, inplace=True, normalization_method='softmax'):
+    def __init__(self, features, joints, label_size, kernel_size=3, norm=torch.nn.BatchNorm2d, inplace=True, normalization_method='softmax'):
         self.normalization_method = normalization_method
         super(PlaneRegression, self).__init__()
+        padding = kernel_size // 2
         self.conv = torch.nn.Sequential(
-            torch.nn.Conv2d(features, features, 3, stride=1, padding=1),
+            torch.nn.Conv2d(features, features, kernel_size, stride=1, padding=padding),
             norm(features, affine=True),
             torch.nn.ReLU(inplace),
-            torch.nn.Conv2d(features, features, 3, stride=1, padding=1),
+            torch.nn.Conv2d(features, features, kernel_size, stride=1, padding=padding),
             norm(features, affine=True),
             torch.nn.ReLU(inplace),
-            torch.nn.Conv2d(features, features, 3, stride=1, padding=1),
+            torch.nn.Conv2d(features, features, kernel_size, stride=1, padding=padding),
             norm(features, affine=True),
             torch.nn.ReLU(inplace),
-            torch.nn.Conv2d(features, joints, 3, stride=1, padding=1)
+            torch.nn.Conv2d(features, joints, kernel_size, stride=1, padding=padding)
         )
 
         com_weight = generate_com_filter(label_size, label_size) # ndarray[label_size, label_size, 2]
@@ -92,19 +94,20 @@ class PlaneRegression(torch.nn.Module):
         return heatmaps, plane_coordinates
 
 class DepthRegression(torch.nn.Module):
-    def __init__(self, features, joints, norm=torch.nn.BatchNorm2d, inplace=True):
+    def __init__(self, features, joints, kernel_size=3, norm=torch.nn.BatchNorm2d, inplace=True):
         super(DepthRegression, self).__init__()
+        padding = kernel_size // 2
         self.conv = torch.nn.Sequential(
-            torch.nn.Conv2d(features, features, 3, stride=1, padding=1),
+            torch.nn.Conv2d(features, features, kernel_size, stride=1, padding=padding),
             norm(features, affine=True),
             torch.nn.ReLU(inplace),
-            torch.nn.Conv2d(features, features, 3, stride=1, padding=1),
+            torch.nn.Conv2d(features, features, kernel_size, stride=1, padding=padding),
             norm(features, affine=True),
             torch.nn.ReLU(inplace),
-            torch.nn.Conv2d(features, features, 3, stride=1, padding=1),
+            torch.nn.Conv2d(features, features, kernel_size, stride=1, padding=padding),
             norm(features, affine=True),
             torch.nn.ReLU(inplace),
-            torch.nn.Conv2d(features, joints, 3, stride=1, padding=1)
+            torch.nn.Conv2d(features, joints, kernel_size, stride=1, padding=padding)
         )
     
     def forward(self, f, heatmaps, label_img, mask):
@@ -126,14 +129,14 @@ class DepthRegression(torch.nn.Module):
         return depthmaps, depth_coordinates
 
 class PredictionBlock(torch.nn.Module):
-    def __init__(self, in_dim, joints, label_size=64, features=256, level=4, norm=torch.nn.BatchNorm2d, heatmap_method='softmax'):
+    def __init__(self, in_dim, joints, label_size=64, features=256, level=4, kernel_size=3, norm=torch.nn.BatchNorm2d, heatmap_method='softmax'):
         super(PredictionBlock, self).__init__()
         self.conv = torch.nn.Conv2d(in_dim, features, 1, stride=1, padding=0)
 
         self.hourglass = Hourglass(features, level, norm=norm)
 
-        self.plane_regression = PlaneRegression(features, joints, label_size, norm=norm, normalization_method=heatmap_method)
-        self.depth_regression = DepthRegression(features, joints, norm=norm)
+        self.plane_regression = PlaneRegression(features, joints, label_size, kernel_size=kernel_size, norm=norm, normalization_method=heatmap_method)
+        self.depth_regression = DepthRegression(features, joints, kernel_size=kernel_size, norm=norm)
 
     def forward(self, x, label_img, mask):
         f = self.hourglass(self.conv(x))
@@ -145,7 +148,7 @@ class PredictionBlock(torch.nn.Module):
         return f, heatmaps, depthmaps, torch.cat([plane_coordinates, depth_coordinates], dim=2)
 
 class PixelwiseRegression(torch.nn.Module):
-    def __init__(self, joints, stage=2, label_size=64, features=256, level=4, norm_method='batch', heatmap_method='softmax'):
+    def __init__(self, joints, stage=2, label_size=64, features=256, level=4, kernel_size=3, norm_method='batch', heatmap_method='softmax'):
         super(PixelwiseRegression, self).__init__()
 
         if norm_method == 'batch':
@@ -153,8 +156,10 @@ class PixelwiseRegression(torch.nn.Module):
         elif norm_method == 'instance':
             norm = torch.nn.InstanceNorm2d
 
+        padding = kernel_size // 2
+
         init_conv = [
-            torch.nn.Conv2d(1, 32, 3, stride=1, padding=1),
+            torch.nn.Conv2d(1, 32, kernel_size, stride=1, padding=padding),
             norm(32, affine=True),
             torch.nn.ReLU(True)
         ]
@@ -163,9 +168,7 @@ class PixelwiseRegression(torch.nn.Module):
         while conv_features < features:
             next_features = min(2 * conv_features, features)
             init_conv.extend([
-                # torch.nn.Conv2d(conv_features, 2 * conv_features, 3, stride=1, padding=1),
-                torch.nn.Conv2d(conv_features, next_features, 3, stride=1, padding=1),
-                # norm(2 * conv_features, affine=True),
+                torch.nn.Conv2d(conv_features, next_features, kernel_size, stride=1, padding=padding),
                 norm(next_features, affine=True),
                 torch.nn.ReLU(True)
             ])
@@ -173,7 +176,7 @@ class PixelwiseRegression(torch.nn.Module):
             conv_features = next_features
 
         init_conv.extend([
-            torch.nn.Conv2d(features, features, 3, stride=2, padding=1),
+            torch.nn.Conv2d(features, features, kernel_size, stride=2, padding=padding),
             norm(features, affine=True),
             torch.nn.ReLU(True)
         ])
@@ -184,7 +187,7 @@ class PixelwiseRegression(torch.nn.Module):
         concat_dim = 2 * joints + 1
         stage_list = [
             PredictionBlock(features if i == 0 else concat_dim, joints, label_size, \
-                features, level, heatmap_method=heatmap_method, norm=norm) for i in range(stage)
+                features, level, kernel_size=kernel_size, heatmap_method=heatmap_method, norm=norm) for i in range(stage)
         ]
 
         self.stages = torch.nn.ModuleList(stage_list)
@@ -231,11 +234,9 @@ class FullRegressionBlock(torch.nn.Module):
         self.regression = torch.nn.Sequential(
             torch.nn.Linear(self.flatten_dim, 1024),
             torch.nn.ReLU(True),
-            torch.nn.Linear(1024, 512),
+            torch.nn.Linear(1024, 1024),
             torch.nn.ReLU(True),
-            torch.nn.Linear(512, 256),
-            torch.nn.ReLU(True),
-            torch.nn.Linear(256, joints * 3)
+            torch.nn.Linear(1024, joints * 3)
         )
 
     def forward(self, x, label_img, mask):
@@ -245,6 +246,8 @@ class FullRegressionBlock(torch.nn.Module):
         downsampled_f = downsampled_f.view(-1, self.flatten_dim)
 
         coordinates = self.regression(downsampled_f)
+        # _f = f.view(-1, self.flatten_dim)
+        # coordinates = self.regression(_f)
 
         coordinates = coordinates.view(-1, self.joints, 3)
 

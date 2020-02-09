@@ -43,6 +43,7 @@ if __name__ == '__main__':
     parser.add_argument('--stages', type=int, default=2)
     parser.add_argument('--features', type=int, default=128)
     parser.add_argument('--level', type=int, default=4)
+    parser.add_argument('--filter_size', type=int, default=3)
 
     parser.add_argument('--opt', type=str, default='adam', help='choose from adam and sgd')
     parser.add_argument('--lr', type=float, default=2e-4)
@@ -109,6 +110,7 @@ if __name__ == '__main__':
         "level" : args.level,
         "norm_method" : args.norm_method,
         "heatmap_method" : args.heatmap_method,
+        "kernel_size" : args.filter_size,
     }
 
     log_name = "{}_{}".format(args.dataset, args.suffix)
@@ -162,9 +164,6 @@ if __name__ == '__main__':
                 every_loss = []
                 for i, result in enumerate(results):
                     _heatmaps, _depthmaps, _uvd = result
-                    # heatmap_loss = args.lambda_h * torch.mean((_heatmaps - heatmaps) ** 2)
-                    # depthmap_loss = args.lambda_d * torch.mean((_depthmaps - depthmaps) ** 2)
-                    # uvd_loss = torch.mean((_uvd - uvd) ** 2)
                     heatmap_loss = args.lambda_h * torch.mean(torch.sum((_heatmaps - heatmaps) ** 2, dim=(2, 3)))
                     depthmap_loss = args.lambda_d * torch.mean(torch.sum((_depthmaps - depthmaps) ** 2, dim=(2, 3)))
                     uvd_loss = torch.mean(torch.sum((_uvd - uvd) ** 2, dim=2))
@@ -184,16 +183,12 @@ if __name__ == '__main__':
 
             # log image results in tensorboard
             writer.add_images('input_image', img, global_step=epoch)
-            # writer.add_images('input_heatmap', heatmaps[0].unsqueeze(1) / heatmaps[0].max(), global_step=epoch)
-            # writer.add_images('input_depthmap', depthmaps[0].unsqueeze(1), global_step=epoch)
             writer.add_figure('input_heatmap', draw_features_torch(heatmaps[0]), global_step=epoch)
             writer.add_figure('input_depthmap', draw_features_torch(depthmaps[0]), global_step=epoch)
             skeleton = draw_skeleton_torch(img[0].cpu(), uvd[0].cpu(), config)
             writer.add_image('input_skeleton', skeleton, global_step=epoch)
             for i, result in enumerate(results):
                 _heatmaps, _depthmaps, _uvd = result
-                # writer.add_images('stage{}_heatmap'.format(i), _heatmaps[0].unsqueeze(1) / _heatmaps[0].max(), global_step=epoch)
-                # writer.add_images('stage{}_depthmap'.format(i), _depthmaps[0].unsqueeze(1), global_step=epoch)
                 writer.add_figure('stage{}_heatmap'.format(i), draw_features_torch(_heatmaps[0]), global_step=epoch)
                 writer.add_figure('stage{}_depthmap'.format(i), draw_features_torch(_depthmaps[0]), global_step=epoch)
                 _skeleton = draw_skeleton_torch(img[0].cpu(), _uvd[0].detach().cpu(), config)
@@ -230,9 +225,6 @@ if __name__ == '__main__':
 
                     for i, result in enumerate(results):
                         _heatmaps, _depthmaps, _uvd = result
-                        # heatmap_loss = args.lambda_h * torch.mean((_heatmaps - heatmaps) ** 2)
-                        # depthmap_loss = args.lambda_d * torch.mean((_depthmaps - depthmaps) ** 2)
-                        # uvd_loss = torch.mean((_uvd - uvd) ** 2)
                         heatmap_loss = args.lambda_h * torch.mean(torch.sum((_heatmaps - heatmaps) ** 2, dim=(2, 3)))
                         depthmap_loss = args.lambda_d * torch.mean(torch.sum((_depthmaps - depthmaps) ** 2, dim=(2, 3)))
                         uvd_loss = torch.mean(torch.sum((_uvd - uvd) ** 2, dim=2))
