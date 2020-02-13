@@ -46,7 +46,7 @@ if __name__ == '__main__':
     parser.add_argument('--filter_size', type=int, default=3)
 
     parser.add_argument('--opt', type=str, default='adam', help='choose from adam and sgd')
-    parser.add_argument('--lr', type=float, default=2e-4)
+    parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--beta1', type=float, default=0.9)
     parser.add_argument('--beta2', type=float, default=0.999)
     parser.add_argument('--weight_decay', type=float, default=0)
