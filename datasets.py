@@ -178,109 +178,81 @@ class HandDataset(torch.utils.data.Dataset):
 
         if self.process_mode == 'uvd':
             # decode the text and load the image with only hand and the uvd coordinate of joints
-            image, joint_uvd, com = self.load_from_text(text)
+            _image, _joint_uvd, _com = self.load_from_text(text)
         else: # process_mode == 'bb'
             assert self.test_only
-            image = self.load_from_text_bb(text)
-            com = None
+            _image = self.load_from_text_bb(text)
+            _com = None
 
-        if com is None:
-            mean = np.mean(image[image > 0])
-            com = center_of_mass(image > 0)
-            com = np.array([com[1], com[0], mean])
+        if _com is None:
+            mean = np.mean(_image[_image > 0])
+            _com = center_of_mass(_image > 0)
+            _com = np.array([_com[1], _com[0], mean])
 
-        # crop the image
         cube_size = self.cube_size
 
-        du = cube_size / com[2] * self.fx
-        dv = cube_size / com[2] * self.fy
-        box_size = int(du + dv)
-        box_size = max(box_size, 2)
-
-        crop_img = center_crop(image, (com[1], com[0]), box_size)
-
-        crop_img = crop_img * np.logical_and(crop_img > com[2] - cube_size, crop_img < com[2] + cube_size)
-
-        if self.using_scale:
-            com[2] = com[2] + np.random.rand(1) * 100 - 50
-
-        # norm the image and uvd to COM
-        crop_img[crop_img > 0] -= com[2] # center the depth image to COM
-        
-        com[0] = int(com[0])
-        com[1] = int(com[1])
-
-        box_size = crop_img.shape[0] # update box_size
-
-        # try:
-        #     if self.using_scale:
-        #         box_size = int((self.scale_factor + (6000 * random.random() - 3000)) / mean)
-        #     else:
-        #         box_size = int(self.scale_factor / mean) # empirical number of boundar box fitting
-        # except:
-        #     image_name, _ = self.decode_line_txt(text)
-        #     print("error for {}, nothing in the image".format(image_name))
-        #     raise ValueError("error for {}, nothing in the image".format(image_name))
-        
-        # box_size = max(box_size, 2) # constrain the min value of the box_size is 2, if we only cut the background the box_size may be 1 or 0
-        # crop_img = center_crop(image, com, box_size)
-        
-        # # norm the image and uvd to COM
-        # crop_img[crop_img > 0] -= mean # center the depth image to COM
-        # # com = [int(com[1]), int(com[0]), mean]
-        # # com = np.array(com) # rebuild COM the uvd format
-        
-        # box_size = crop_img.shape[0] # update box_size
-
-        if self.using_flip:
-            if random.random() < 0.5: # probality to flip
-                for j in range(crop_img.shape[1] // 2):
-                    tem = crop_img[:, j].copy()
-                    crop_img[:, j] = crop_img[:, crop_img.shape[1] - j - 1].copy()
-                    crop_img[:, crop_img.shape[1] - j - 1] = tem
-                joint_uvd_centered[:, 0] = - joint_uvd_centered[:, 0]
-
-        # resize the image and uvd
         try:
-            img_resize = cv2.resize(crop_img, (self.image_size, self.image_size))
-        except:
-            # probably because size is zero
-            print("resize error")
-            raise ValueError("Resize error")
+            if not self.augmentation:
+                raise Exception('load data without augmentation')
 
-        # Generate label_image and mask
-        label_image = cv2.resize(img_resize, (self.label_size, self.label_size))
-        is_hand = label_image != 0
-        mask = is_hand.astype(float)
+            image = _image.copy()
+            joint_uvd = _joint_uvd.copy()
+            com = _com.copy()
 
-        if self.test_only:
-            # Just return the basic elements we need to run the network
-            # normalize the image first before return
-            # normalized_img = img_resize / self.threshold
-            # normalized_label_img = label_image / self.threshold
-            normalized_img = img_resize / cube_size
-            normalized_label_img = label_image / cube_size
+            # if self.using_scale:
+            #     com[2] = com[2] * (np.random.rand(1) * 0.4 + 0.8)  # random scale [0.8, 1.2]  
 
-            # Convert to torch format
-            normalized_img = torch.from_numpy(normalized_img).float().unsqueeze(0)
-            normalized_label_img = torch.from_numpy(normalized_label_img).float().unsqueeze(0)
-            mask = torch.from_numpy(mask).float().unsqueeze(0)
-            box_size = torch.tensor(box_size).float()
-            com = torch.from_numpy(com).float()
+            # crop the image
+            du = cube_size / com[2] * self.fx
+            dv = cube_size / com[2] * self.fy
+            box_size = int(du + dv)
+
+            # if self.using_scale:
+            #     scale = (np.random.rand(1) * 0.4 + 0.8)  # random scale [0.8, 1.2]
+            #     # print(scale)
+            #     box_size = box_size * scale
+            box_size = max(box_size, 2)
+
+
+            crop_img = center_crop(image, (com[1], com[0]), box_size)
+            crop_img = crop_img * np.logical_and(crop_img > com[2] - cube_size, crop_img < com[2] + cube_size)
+
+            if self.using_scale:
+                com[2] = com[2] + np.random.rand(1) * 100 - 50
+
+            # norm the image and uvd to COM
+            crop_img[crop_img > 0] -= com[2] # center the depth image to COM
             
-            return normalized_img, normalized_label_img, mask, box_size, com
+            com[0] = int(com[0])
+            com[1] = int(com[1])
 
-        # ---------------------------------------------------------------------- #
-        #                    Below code is only for training                     #
-        # ---------------------------------------------------------------------- #
+            box_size = crop_img.shape[0] # update box_size
 
-        joint_uvd_centered = joint_uvd - com # center the uvd to COM
-        joint_uvd_centered_resize = joint_uvd_centered.copy()
-        joint_uvd_centered_resize[:,:2] = joint_uvd_centered_resize[:,:2] / (box_size - 1) * (self.image_size - 1)
+            if self.using_flip:
+                if random.random() < 0.5: # probality to flip
+                    for j in range(crop_img.shape[1] // 2):
+                        tem = crop_img[:, j].copy()
+                        crop_img[:, j] = crop_img[:, crop_img.shape[1] - j - 1].copy()
+                        crop_img[:, crop_img.shape[1] - j - 1] = tem
+                    joint_uvd_centered[:, 0] = - joint_uvd_centered[:, 0]
 
-        # TODO: there must be some neat ways to implement the augmentation
-        if self.augmentation:
-            # perform data augmentation
+            # resize the image and uvd
+            try:
+                img_resize = cv2.resize(crop_img, (self.image_size, self.image_size))
+            except:
+                # probably because size is zero
+                print("resize error")
+                raise ValueError("Resize error")
+
+            # Generate label_image and mask
+            label_image = cv2.resize(img_resize, (self.label_size, self.label_size))
+            is_hand = label_image != 0
+            mask = is_hand.astype(float)
+
+            joint_uvd_centered = joint_uvd - com # center the uvd to COM
+            joint_uvd_centered_resize = joint_uvd_centered.copy()
+            joint_uvd_centered_resize[:,:2] = joint_uvd_centered_resize[:,:2] / (box_size - 1) * (self.image_size - 1)
+
             if self.using_rotation:
                 # random rotate the image and the label
                 _img_resize, _joint_uvd_centered_resize = random_rotated(img_resize, joint_uvd_centered_resize)
@@ -290,24 +262,66 @@ class HandDataset(torch.utils.data.Dataset):
             joint_uvd_kernel[:,:2] = joint_uvd_kernel[:,:2] / (self.image_size - 1) * (self.label_size - 1) + \
                 np.array([self.label_size // 2, self.label_size // 2])
 
-            try:
-                # try generate heatmaps with augmented data, which may fail
-                heatmaps = [generate_kernel(generate_heatmap(self.label_size, joint_uvd_kernel[i, 0], joint_uvd_kernel[i, 1]), \
-                    kernel_size=self.kernel_size, sigmoid=self.sigmoid)[:, :, np.newaxis] for i in range(self.joint_number)]
-                # the augmentation is proved ok, so use the augmented version
-                img_resize = _img_resize
-                joint_uvd_centered_resize = _joint_uvd_centered_resize
-            except:
-                # back to original data, do not augment
-                joint_uvd_kernel = joint_uvd_centered_resize.copy()
-                joint_uvd_kernel[:,:2] = joint_uvd_kernel[:,:2] / (self.image_size - 1) * (self.label_size - 1) + \
-                    np.array([self.label_size // 2, self.label_size // 2])
-                heatmaps = [generate_kernel(generate_heatmap(self.label_size, joint_uvd_kernel[i, 0], joint_uvd_kernel[i, 1]), \
-                    kernel_size=self.kernel_size, sigmoid=self.sigmoid)[:, :, np.newaxis] for i in range(self.joint_number)]
+            # try generate heatmaps with augmented data, which may fail
+            heatmaps = [generate_kernel(generate_heatmap(self.label_size, joint_uvd_kernel[i, 0], joint_uvd_kernel[i, 1]), \
+                kernel_size=self.kernel_size, sigmoid=self.sigmoid)[:, :, np.newaxis] for i in range(self.joint_number)]
+            # the augmentation is proved ok, so use the augmented version
+            img_resize = _img_resize
+            joint_uvd_centered_resize = _joint_uvd_centered_resize
 
-            heatmaps = np.concatenate(heatmaps, axis=2)
+        except: # not performing any data augmentation
+            image = _image.copy()
+            joint_uvd = _joint_uvd.copy()
+            com = _com.copy()
+
+            # crop the image
+            du = cube_size / com[2] * self.fx
+            dv = cube_size / com[2] * self.fy
+            box_size = int(du + dv)
+            box_size = max(box_size, 2)
+
+            crop_img = center_crop(image, (com[1], com[0]), box_size)
+            crop_img = crop_img * np.logical_and(crop_img > com[2] - cube_size, crop_img < com[2] + cube_size)
+
+            # norm the image and uvd to COM
+            crop_img[crop_img > 0] -= com[2] # center the depth image to COM
             
-        else:
+            com[0] = int(com[0])
+            com[1] = int(com[1])
+            box_size = crop_img.shape[0] # update box_size
+
+            # resize the image and uvd
+            try:
+                img_resize = cv2.resize(crop_img, (self.image_size, self.image_size))
+            except:
+                # probably because size is zero
+                print("resize error")
+                raise ValueError("Resize error")
+
+            # Generate label_image and mask
+            label_image = cv2.resize(img_resize, (self.label_size, self.label_size))
+            is_hand = label_image != 0
+            mask = is_hand.astype(float)            
+
+            if self.test_only:
+                # Just return the basic elements we need to run the network
+                # normalize the image first before return
+                normalized_img = img_resize / cube_size
+                normalized_label_img = label_image / cube_size
+
+                # Convert to torch format
+                normalized_img = torch.from_numpy(normalized_img).float().unsqueeze(0)
+                normalized_label_img = torch.from_numpy(normalized_label_img).float().unsqueeze(0)
+                mask = torch.from_numpy(mask).float().unsqueeze(0)
+                box_size = torch.tensor(box_size).float()
+                com = torch.from_numpy(com).float()
+                
+                return normalized_img, normalized_label_img, mask, box_size, com
+
+            joint_uvd_centered = joint_uvd - com # center the uvd to COM
+            joint_uvd_centered_resize = joint_uvd_centered.copy()
+            joint_uvd_centered_resize[:,:2] = joint_uvd_centered_resize[:,:2] / (box_size - 1) * (self.image_size - 1)
+
             # Generate Heatmap
             joint_uvd_kernel = joint_uvd_centered_resize.copy()
             joint_uvd_kernel[:,:2] = joint_uvd_kernel[:,:2] / (self.image_size - 1) * (self.label_size - 1) + \
@@ -320,7 +334,7 @@ class HandDataset(torch.utils.data.Dataset):
                 print("{} heatmap error".format(path))
                 raise ValueError("{} heatmap error".format(path))
 
-            heatmaps = np.concatenate(heatmaps, axis=2)
+        heatmaps = np.concatenate(heatmaps, axis=2)
 
         # Generate Dmap
         Dmap = []
@@ -331,15 +345,11 @@ class HandDataset(torch.utils.data.Dataset):
         Dmap = np.concatenate(Dmap, axis=2)   
 
         # Normalize data
-        # normalized_img = img_resize / self.threshold
-        # normalized_label_img = label_image / self.threshold
         normalized_img = img_resize / cube_size
         normalized_label_img = label_image / cube_size
-        # normalized_Dmap = Dmap / self.threshold
         normalized_Dmap = Dmap / cube_size
         normalized_uvd = joint_uvd_centered_resize.copy()
         normalized_uvd[:, :2] = normalized_uvd[:, :2] / (self.image_size - 1)
-        # normalized_uvd[:, 2] = normalized_uvd[:, 2] / self.threshold
         normalized_uvd[:, 2] = normalized_uvd[:, 2] / cube_size
         
         if np.any(np.isnan(normalized_img)) or np.any(np.isnan(normalized_uvd)) or \
@@ -365,7 +375,7 @@ class MSRADataset(HandDataset):
     def __init__(self, fx = 241.42, fy = 241.42, halfu = 160, halfv = 120, path="Data/MSRA", 
                 sigmoid=1.5, image_size=128, kernel_size=7,
                 label_size=64, test_only=False, using_rotation=False, using_scale=False, using_flip=False, 
-                cube_size=150, joint_number=21, dataset='train'):
+                cube_size=120, joint_number=21, dataset='train'):
         super(MSRADataset, self).__init__(fx, fy, halfu, halfv, path, sigmoid, image_size, kernel_size,
                 label_size, test_only, using_rotation, using_scale, using_flip,
                 cube_size, joint_number, process_mode='uvd', dataset=dataset)
@@ -453,9 +463,9 @@ class ICVLDataset(HandDataset):
     def __init__(self, fx = 241.42, fy = 241.42, halfu = 160, halfv = 120, path="Data/ICVL/", 
                 sigmoid=1.5, image_size=128, kernel_size=7, label_size=64, 
                 test_only=False, using_rotation=False, using_scale=False, using_flip=False, 
-                cube_size=150, joint_number=16, dataset='train'):
+                cube_size=125, joint_number=16, dataset='train'):
 
-        with open(os.path.join(path, 'icvl_center.txt'), 'r') as f:
+        with open(os.path.join(path, 'center.txt'), 'r') as f:
             centers = f.readlines()
         self.centers = np.array(list(map(lambda x: list(map(float, x.strip().split())), centers)))
 
@@ -470,7 +480,7 @@ class ICVLDataset(HandDataset):
         Thumb = [0, 1, 2, 3]
         self.config = [Thumb, Index, Mid, Ring, Small]
 
-        with open(os.path.join(self.path, 'icvl_center.txt'), 'r') as f:
+        with open(os.path.join(self.path, 'center.txt'), 'r') as f:
             centers = f.readlines()
         self.centers = np.array(list(map(lambda x: list(map(float, x.strip().split())), centers)))
 
@@ -572,6 +582,7 @@ class ICVLDataset(HandDataset):
             raise ValueError("file do not exist")
         
         if self.dataset == 'val' or self.dataset == 'test':
+        # if False:
         # if self.dataset == 'test':
             # ground truth should not be used, perform a imperical threshold here
             # MM = np.logical_and(image < 600, image > 100)
@@ -596,7 +607,7 @@ class ICVLDataset(HandDataset):
             # image = image * MM
             com = np.mean(joint_uvd, axis=0)
 
-        cube_size = self.cube_size
+        cube_size = 125
 
         du = cube_size / com[2] * self.fx
         dv = cube_size / com[2] * self.fy
@@ -631,7 +642,7 @@ class NYUDataset(HandDataset):
                 cube_size=175, joint_number=14, dataset='train'):
         self.index = [0, 3, 6, 9, 12, 15, 18, 21, 24, 25, 27, 30, 31, 32]
 
-        with open(os.path.join(path, 'nyu_center.txt'), 'r') as f:
+        with open(os.path.join(path, 'center.txt'), 'r') as f:
             centers = f.readlines()
         self.centers = np.array(list(map(lambda x: list(map(float, x.strip().split())), centers)))
 
@@ -761,13 +772,16 @@ class NYUDataset(HandDataset):
             raise ValueError("file do not exist")
 
         if self.dataset == 'val' or self.dataset == 'test':
+        # if False:
             # ground truth should not be used, perform a imperical threshold here
             # MM = np.logical_and(image < 600, image > 100)
             # image = image * MM
             result = re.findall(r'depth_1_(\d+)', path)
             index = int(result[0]) - 1
             com = self.centers[index]
+            # com[2] -= 10
             # print(com - np.mean(joint_uvd, axis=0))
+            # print(com[2] - np.min(image[image>500]))
         else:
             # # crop the image by boundary box
             # uv = joint_uvd[:, :2]
@@ -797,6 +811,7 @@ class NYUDataset(HandDataset):
         image = image * MM
 
         MM = np.logical_and(image < com[2] + cube_size, image > com[2] - cube_size)
+
         image = image * MM
 
         return image, joint_uvd, None
