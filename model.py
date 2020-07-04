@@ -44,7 +44,7 @@ class Hourglass(torch.nn.Module):
         h = self.output_conv(h)
         h = F.interpolate(h, size=x.shape[2:])
 
-        return F.relu(h + x, inplace=True)
+        return h + x
 
 class PlaneRegression(torch.nn.Module):
     def __init__(self, features, joints, label_size, kernel_size=3, norm=torch.nn.BatchNorm2d, inplace=True, normalization_method='softmax'):
@@ -70,6 +70,9 @@ class PlaneRegression(torch.nn.Module):
 
         self.register_buffer('filter', com_weight)
 
+        if self.normalization_method == 'softmax':
+            self.register_parameter('w', torch.nn.Parameter(torch.ones(joints, 1)))
+
     def forward(self, f):
         heatmaps = self.conv(f)
 
@@ -78,7 +81,7 @@ class PlaneRegression(torch.nn.Module):
         if self.normalization_method == 'softmax':
             # use softmax to normalize heatmap
             heatmaps = heatmaps.view(B, J, -1)
-            heatmaps = F.softmax(heatmaps, dim=2)
+            heatmaps = F.softmax(self.w * heatmaps, dim=2)
             heatmaps = heatmaps.view(B, J, H, W)
         else:
             # use sum to normalize heatmap

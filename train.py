@@ -28,7 +28,7 @@ if __name__ == '__main__':
     parser.add_argument('--label_size', type=int, default=64)
     parser.add_argument('--kernel_size', type=int, default=7)
     parser.add_argument('--sigmoid', type=float, default=1.5)
-    parser.add_argument('--norm_method', type=str, default='instance', help='choose from batch and instance')
+    parser.add_argument('--norm_method', type=str, default='batch', help='choose from batch and instance')
     parser.add_argument('--heatmap_method', type=str, default='softmax', help='choose from softmax and sum')
 
     # need more time to train if using any of these augmentation
@@ -52,10 +52,10 @@ if __name__ == '__main__':
     parser.add_argument('--weight_decay', type=float, default=0)
     parser.add_argument("--lambda_h", type=float, default=1.0)
     parser.add_argument('--lambda_d', type=float, default=1.0)
-    parser.add_argument('--alpha', type=float, default=0.5)
+    parser.add_argument('--alpha', type=float, default=1.0)
 
-    parser.add_argument('--lr_decay', type=float, default=1)
-    parser.add_argument('--decay_epoch', type=float, default=10)
+    parser.add_argument('--lr_decay', type=float, default=0.1)
+    parser.add_argument('--decay_epoch', type=float, default=30)
 
     args = parser.parse_args()
 
