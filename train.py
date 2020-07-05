@@ -54,7 +54,7 @@ if __name__ == '__main__':
     parser.add_argument('--lambda_d', type=float, default=1.0)
     parser.add_argument('--alpha', type=float, default=1.0)
 
-    parser.add_argument('--lr_decay', type=float, default=0.1)
+    parser.add_argument('--lr_decay', type=float, default=1.0)
     parser.add_argument('--decay_epoch', type=float, default=30)
 
     args = parser.parse_args()
@@ -193,7 +193,8 @@ if __name__ == '__main__':
                 writer.add_figure('stage{}_depthmap'.format(i), draw_features_torch(_depthmaps[0]), global_step=epoch)
                 _skeleton = draw_skeleton_torch(img[0].cpu(), _uvd[0].detach().cpu(), config)
                 writer.add_image('stage{}_skeleton'.format(i), _skeleton, global_step=epoch)
-                        
+            
+            model.eval()
             with torch.no_grad():
                 # compute val losses
                 num = 0
@@ -255,6 +256,7 @@ if __name__ == '__main__':
                     heatmap_loss, depthmap_loss, uvd_loss = losses
                     val_loss = val_loss + args.alpha * uvd_loss + (1 - args.alpha) * (heatmap_loss + depthmap_loss) 
             
+            model.train()
             # log scalas in tensorboard
             writer.add_scalars('loss', {'train' : loss.item(), 'val' : val_loss.item()}, global_step=epoch)
             for i in range(len(every_loss)):
