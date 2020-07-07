@@ -670,7 +670,7 @@ class NYUDataset(HandDataset):
             print("building train.txt ...")
             mat = loadmat(os.path.join(self.path, "train", "joint_data.mat"))
             datatexts = []
-            for j in range(3):
+            for j in range(1):
                 uvds = mat['joint_uvd'][j]
                 for i in range(uvds.shape[0]):
                     uvd = uvds[i]
