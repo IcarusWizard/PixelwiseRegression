@@ -12,11 +12,11 @@ from utils import setup_seed, step_loader, save_model, draw_skeleton_torch, sele
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--suffix', type=str, default="default",
+    parser.add_argument('--suffix', type=str, default="new_center",
         help="the suffix of model file and log file"
     )
 
-    parser.add_argument('--dataset', type=str, default='MSRA', 
+    parser.add_argument('--dataset', type=str, default='NYU', 
         help="choose from MSRA, ICVL, NYU, HAND17"    
     )
 

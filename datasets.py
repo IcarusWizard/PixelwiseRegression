@@ -794,8 +794,8 @@ class NYUDataset(HandDataset):
             index = int(result[0]) - 1
             com = self.train_centers[index]
 
-        du = cube_size / com[2] * self.fx
-        dv = cube_size / com[2] * self.fy
+        du = (cube_size - 40) / com[2] * self.fx
+        dv = (cube_size - 40) / com[2] * self.fy
         left = int(com[0] - du)
         right = int(com[0] + du)
         top = int(com[1] - dv)
@@ -812,7 +812,7 @@ class NYUDataset(HandDataset):
 
         image = image * MM
 
-        return image, joint_uvd, None
+        return image, joint_uvd, com
 
 class HAND17Dataset(HandDataset):
     def __init__(self, fx = 475.065948, fy = 475.065857, halfu = 315.944855, halfv = 245.287079, path="Data/HAND17/", 
