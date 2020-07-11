@@ -16,7 +16,7 @@ if __name__ == '__main__':
         help="the suffix of model file and log file"
     )
 
-    parser.add_argument('--dataset', type=str, default='MSRA', 
+    parser.add_argument('--dataset', type=str, default='NYU', 
         help="choose from MSRA, ICVL, NYU, HAND17"    
     )
 
@@ -28,7 +28,7 @@ if __name__ == '__main__':
     parser.add_argument('--label_size', type=int, default=64)
     parser.add_argument('--kernel_size', type=int, default=7)
     parser.add_argument('--sigmoid', type=float, default=1.5)
-    parser.add_argument('--norm_method', type=str, default='batch', help='choose from batch and instance')
+    parser.add_argument('--norm_method', type=str, default='instance', help='choose from batch and instance')
     parser.add_argument('--heatmap_method', type=str, default='softmax', help='choose from softmax and sum')
 
     # need more time to train if using any of these augmentation
