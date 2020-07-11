@@ -642,9 +642,8 @@ class NYUDataset(HandDataset):
                 cube_size=175, joint_number=14, dataset='train'):
         self.index = [0, 3, 6, 9, 12, 15, 18, 21, 24, 25, 27, 30, 31, 32]
 
-        with open(os.path.join(path, 'center.txt'), 'r') as f:
-            centers = f.readlines()
-        self.centers = np.array(list(map(lambda x: list(map(float, x.strip().split())), centers)))
+        self.train_centers = np.loadtxt(os.path.join(path, 'nyu_center_train.txt'))
+        self.test_centers = np.loadtxt(os.path.join(path, 'nyu_center_test.txt'))
 
         super(NYUDataset, self).__init__(fx, fy, halfu, halfv, path, sigmoid, image_size, kernel_size,
                 label_size, test_only, using_rotation, using_scale, using_flip, 
@@ -761,9 +760,6 @@ class NYUDataset(HandDataset):
 
         path, joint_uvd = super().decode_line_txt(text)
 
-        # center = joint_uvd[-1]
-        # joint_uvd = joint_uvd[:-1]
-
         try:
             _image = plt.imread(path)
             image = (_image[:,:,1] * 256 + _image[:,:,2]) * 255
@@ -778,7 +774,7 @@ class NYUDataset(HandDataset):
             # image = image * MM
             result = re.findall(r'depth_1_(\d+)', path)
             index = int(result[0]) - 1
-            com = self.centers[index]
+            com = self.test_centers[index]
             # com[2] -= 10
             # print(com - np.mean(joint_uvd, axis=0))
             # print(com[2] - np.min(image[image>500]))
@@ -794,7 +790,9 @@ class NYUDataset(HandDataset):
             # MM = np.zeros(image.shape)
             # MM[top:buttom, left:right] = 1
             # image = image * MM
-            com = np.mean(joint_uvd, axis=0)    
+            result = re.findall(r'depth_1_(\d+)', path)
+            index = int(result[0]) - 1
+            com = self.train_centers[index]
 
         du = cube_size / com[2] * self.fx
         dv = cube_size / com[2] * self.fy
