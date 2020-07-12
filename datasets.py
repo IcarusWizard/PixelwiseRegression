@@ -178,18 +178,20 @@ class HandDataset(torch.utils.data.Dataset):
 
         if self.process_mode == 'uvd':
             # decode the text and load the image with only hand and the uvd coordinate of joints
-            _image, _joint_uvd, _com = self.load_from_text(text)
+            _image, _joint_uvd, _com, cube_size = self.load_from_text(text)
         else: # process_mode == 'bb'
             assert self.test_only
             _image = self.load_from_text_bb(text)
             _com = None
+            cube_size = None
 
         if _com is None:
             mean = np.mean(_image[_image > 0])
             _com = center_of_mass(_image > 0)
             _com = np.array([_com[1], _com[0], mean])
 
-        cube_size = self.cube_size
+        if cube_size is None:
+            cube_size = self.cube_size
 
         try:
             if not self.augmentation:
@@ -774,6 +776,8 @@ class NYUDataset(HandDataset):
             # image = image * MM
             result = re.findall(r'depth_1_(\d+)', path)
             index = int(result[0]) - 1
+            if index > 2440:
+                cube_size = int(cube_size * 5 / 6)
             com = self.test_centers[index]
             # com[2] -= 10
             # print(com - np.mean(joint_uvd, axis=0))
@@ -812,7 +816,7 @@ class NYUDataset(HandDataset):
 
         image = image * MM
 
-        return image, joint_uvd, com
+        return image, joint_uvd, com, cube_size
 
 class HAND17Dataset(HandDataset):
     def __init__(self, fx = 475.065948, fy = 475.065857, halfu = 315.944855, halfv = 245.287079, path="Data/HAND17/", 
