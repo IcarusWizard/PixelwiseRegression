@@ -136,7 +136,7 @@ class PredictionBlock(torch.nn.Module):
         super(PredictionBlock, self).__init__()
         self.conv = torch.nn.Conv2d(in_dim, features, 1, stride=1, padding=0)
 
-        self.hourglass = Hourglass(features, level)
+        self.hourglass = Hourglass(features, level, norm=norm)
 
         self.plane_regression = PlaneRegression(features, joints, label_size, kernel_size=kernel_size, norm=norm, normalization_method=heatmap_method)
         self.depth_regression = DepthRegression(features, joints, kernel_size=kernel_size, norm=norm)
@@ -162,12 +162,12 @@ class PixelwiseRegression(torch.nn.Module):
         padding = kernel_size // 2
 
         init_conv = [
-            torch.nn.Conv2d(1, 64, 7, stride=1, padding=3),
-            norm(64, affine=True),
+            torch.nn.Conv2d(1, 32, kernel_size, stride=1, padding=padding),
+            norm(32, affine=True),
             torch.nn.ReLU(True)
         ]
 
-        conv_features = 64
+        conv_features = 32
         while conv_features < features:
             next_features = min(2 * conv_features, features)
             init_conv.extend([
