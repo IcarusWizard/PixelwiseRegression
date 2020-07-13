@@ -117,7 +117,7 @@ if __name__ == '__main__':
     }
     
     args.suffix += '_subject{}'.format(args.subject)
-    log_name = "{}_{}".format(args.dataset, args.suffix)
+    log_name = "MSRA_{}".format(args.suffix)
     model_name = log_name + "_{}.pt" 
 
     Dataset = datasets.MSRADataset
