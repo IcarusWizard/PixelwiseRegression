@@ -382,10 +382,14 @@ class HandDataset(torch.utils.data.Dataset):
         return normalized_img, normalized_label_img, mask, box_size, cube_size, com, normalized_uvd, heatmaps, normalized_Dmap        
 
 class MSRADataset(HandDataset):
-    def __init__(self, fx = 241.42, fy = 241.42, halfu = 160, halfv = 120, path="Data/MSRA", 
+    def __init__(self, fx=241.42, fy=241.42, halfu=160, halfv=120, path="Data/MSRA", 
                 sigmoid=1.5, image_size=128, kernel_size=7,
                 label_size=64, test_only=False, using_rotation=False, using_scale=False, using_shift=False, using_flip=False, 
-                cube_size=120, joint_number=21, dataset='train'):
+                cube_size=125, joint_number=21, dataset='train', subject=0):
+
+        self.subject = subject
+        dataset = dataset + '_{}'.format(subject)
+
         super(MSRADataset, self).__init__(fx, fy, halfu, halfv, path, sigmoid, image_size, kernel_size,
                 label_size, test_only, using_rotation, using_scale, using_shift, using_flip,
                 cube_size, joint_number, process_mode='uvd', dataset=dataset)
@@ -397,6 +401,18 @@ class MSRADataset(HandDataset):
         Thumb = [0, 17, 18, 19, 20]
         self.config = [Thumb, Index, Mid, Ring, Small]
 
+    @property
+    def data_ready(self):
+        """
+            Check if the dataset is already created
+        """
+        ready = True
+        for i in range(9):
+            ready = ready and os.path.exists(os.path.join(self.path, "train_{}.txt".format(i)))
+            ready = ready and os.path.exists(os.path.join(self.path, "val_{}.txt".format(i)))
+            ready = ready and os.path.exists(os.path.join(self.path, "test_{}.txt".format(i)))
+        return ready
+
     def build_data(self):
         if self.data_ready:
             print("Data is Already build~")
@@ -405,55 +421,70 @@ class MSRADataset(HandDataset):
         persons = ["P%d" % i for i in range(9)]
         gestures = os.listdir(os.path.join(self.path, persons[0]))
         gestures.sort()
-        paths = [os.path.join(self.path, person, gesture) for person in persons for gesture in gestures]
-        bin_paths = []
-        joints = []
+        all_paths = [[os.path.join(self.path, person, gesture) for gesture in gestures] for person in persons]
+        bin_paths = [[] for i in range(9)]
+        joints = [[] for i in range(9)]
 
         print('loading file list ......')
-        with tqdm(total=len(paths)) as pbar:
-            for i, path in enumerate(paths):
-                _joints = np.loadtxt(os.path.join(path, 'joint.txt'), skiprows=1)
-                with open(os.path.join(path, 'joint.txt')) as f:
-                    samples = int(f.readline())
-                _joints = _joints.reshape((samples, 21, 3))
-                _joints[:, :, 1] = - _joints[:, :, 1]
-                _joints[:, :, 2] = - _joints[:, :, 2]
-                joints.append(_joints.reshape((samples, 63)))
-                for j in range(samples):
-                    bin_paths.append(os.path.join(path, "%06d_depth.bin" % j))
-                pbar.update(1)
-        joints = np.concatenate(joints, axis=0)
+        with tqdm(len(persons) * len(gestures)) as pbar:
+            for i, paths in enumerate(all_paths):
+                for path in paths:
+                    _joints = np.loadtxt(os.path.join(path, 'joint.txt'), skiprows=1)
+                    with open(os.path.join(path, 'joint.txt')) as f:
+                        samples = int(f.readline())
+                    _joints = _joints.reshape((samples, 21, 3))
+                    _joints[:, :, 1] = - _joints[:, :, 1]
+                    _joints[:, :, 2] = - _joints[:, :, 2]
+                    joints[i].append(_joints.reshape((samples, 63)))
+                    for j in range(samples):
+                        bin_paths[i].append(os.path.join(path, "%06d_depth.bin" % j))
+                    pbar.update(1)
+                joints[i] = np.concatenate(joints[i], axis=0)
 
         print('saving test.txt ......')
-        super().write_data_txt(os.path.join(self.path, "test.txt"), list(bin_paths), list(joints))
+        for i in range(9):
+            super().write_data_txt(os.path.join(self.path, "test_{}.txt".format(i)), list(bin_paths[i]), list(joints[i]))
 
         print('checking data ......')
-        dataname = os.path.join(self.path, "test.txt")
-        with open(dataname, 'r') as f:
-            datatexts = f.readlines()
-
+        datatexts = []
+        traintxts = []
+        for i in range(9):
+            dataname = os.path.join(self.path, "test_{}.txt".format(i))
+            with open(dataname, 'r') as f:
+                datatexts.append(f.readlines())
+        
         pool = mp.Pool(processes=os.cpu_count())
-        processing = []
-        for text in datatexts:
-            r = pool.apply_async(self.check_text, (text, ))
-            processing.append(r)
+        for i in range(9):
+            processing = []
+            for text in datatexts[i]:
+                r = pool.apply_async(self.check_text, (text, ))
+                processing.append(r)
 
-        traintxt = []
-        with tqdm(total=len(datatexts)) as pbar:
-            for r in processing:
-                text = r.get()
-                if text:
-                    traintxt.append(text)
-                pbar.update(1)
+            traintxt = []
+            with tqdm(total=len(datatexts[i])) as pbar:
+                for r in processing:
+                    text = r.get()
+                    if text:
+                        traintxt.append(text)
+                    pbar.update(1)
+
+            traintxts.append(traintxt)
+            print('For person {}, {} / {} data can use to train'.format(i, len(traintxt), len(datatexts[i])))
         pool.close()
         
-        print('{} / {} data can use to train'.format(len(traintxt), len(datatexts)))
+        for i in range(9):
+            train_to_write = []
+            for j in range(9):
+                if i == j:
+                    val_to_write = traintxts[j]
+                else:
+                    train_to_write += traintxts[j]
 
-        with open(os.path.join(self.path, "train.txt"), 'w') as f:
-            f.writelines(filter(lambda s: not 'P0' in s, traintxt))
+            with open(os.path.join(self.path, "train_{}.txt".format(i)), 'w') as f:
+                f.writelines(train_to_write)
 
-        with open(os.path.join(self.path, "val.txt"), 'w') as f:
-            f.writelines(filter(lambda s: 'P0' in s, traintxt))
+            with open(os.path.join(self.path, "val_{}.txt".format(i)), 'w') as f:
+                f.writelines(val_to_write)
         
     def load_from_text(self, text):
         """
