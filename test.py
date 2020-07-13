@@ -23,8 +23,8 @@ if __name__ == '__main__':
     parser.add_argument('--label_size', type=int, default=64)
     parser.add_argument('--kernel_size', type=int, default=7)
     parser.add_argument('--sigmoid', type=float, default=1.5)
-    parser.add_argument('--norm_method', type=str, default='batch', help='choose from batch and instance')
-    parser.add_argument('--heatmap_method', type=str, default='softmax', help='choose from softmax and sumz')
+    parser.add_argument('--norm_method', type=str, default='instance', help='choose from batch and instance')
+    parser.add_argument('--heatmap_method', type=str, default='softmax', help='choose from softmax and sum')
     parser.add_argument('--filter_size', type=int, default=3)
 
     parser.add_argument('--gpu_id', type=str, default='0')
@@ -91,7 +91,7 @@ if __name__ == '__main__':
     with torch.no_grad(), tqdm(total=len(testset) // args.batch_size + 1) as pbar:
         pre_uvd = []
         for batch in iter(test_loader):
-            img, label_img, mask, box_size, com = batch
+            img, label_img, mask, box_size, cube_size, com = batch
             
             img = img.to(device, non_blocking=True)
             label_img = label_img.to(device, non_blocking=True)
@@ -102,7 +102,7 @@ if __name__ == '__main__':
             _heatmaps, _depthmaps, _uvd = results[-1]
 
             _uvd = _uvd.cpu()
-            _uvd = recover_uvd(_uvd, box_size, com, threshold)
+            _uvd = recover_uvd(_uvd, box_size, com, cube_size)
             _uvd = _uvd.numpy()
 
             if args.dataset == 'HAND17':

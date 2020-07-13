@@ -15,7 +15,7 @@ from utils import load_bin, draw_skeleton, center_crop, \
 
 class HandDataset(torch.utils.data.Dataset):
     def __init__(self, fx, fy, halfu, halfv, path, sigmoid, image_size, kernel_size,
-                label_size, test_only, using_rotation, using_scale, using_flip, 
+                label_size, test_only, using_rotation, using_scale, using_shift, using_flip, 
                 cube_size, joint_number, process_mode='uvd', dataset='train'):
         super(HandDataset, self).__init__()
         self.fx = fx                        # focal length in x axis
@@ -30,16 +30,15 @@ class HandDataset(torch.utils.data.Dataset):
         self.test_only = test_only          # set to True, the dataset will not return heatmap and depthmap
         self.using_rotation = using_rotation# whether to perform random rotation for images
         self.using_scale = using_scale      # whether to perform a random scale for images
+        self.using_shift = using_shift      # whether to perform random shift for image croption
         self.using_flip = using_flip        # whether to filp the image to solve the chirality problem
-        # self.scale_factor = scale_factor    # the factor used in random scale
-        # self.threshold = threshold          # half of the boxsize in z axis 
         self.cube_size = cube_size          # half of the cube that crop the hand
         self.joint_number = joint_number    # number of joints
         self.config = None                  # configuration of fingers (index in bottom-up order) 
         self.process_mode = process_mode    # the processing mode used in processing single data (uvd or bb)
         self.dataset = dataset
 
-        self.augmentation = self.using_flip or self.using_scale or self.using_rotation
+        self.augmentation = self.using_flip or self.using_scale or self.using_rotation or self.using_shift
 
         if self.test_only:
             assert not self.augmentation, "you can not transform the test data"
@@ -201,26 +200,34 @@ class HandDataset(torch.utils.data.Dataset):
             joint_uvd = _joint_uvd.copy()
             com = _com.copy()
 
-            # if self.using_scale:
-            #     com[2] = com[2] * (np.random.rand(1) * 0.4 + 0.8)  # random scale [0.8, 1.2]  
+            if self.using_rotation:
+                angle = random.random() * 60 - 30 # random rotation [-30, 30]
+            else:
+                angle = 0
+
+            if self.using_scale:
+                scale = 0.8 + random.random() * 0.4 # random scale [0.8, 1.2]
+            else:
+                scale = 1.0
+
+            if self.using_shift:
+                # random shift [-5, 5]
+                shift_x = -5 + random.random() * 10 
+                shift_y = -5 + random.random() * 10 
+                com = self.uvd2xyz(com)
+                com[0] += shift_x
+                com[1] += shift_y
+                com = self.xyz2uvd(com)
 
             # crop the image
             du = cube_size / com[2] * self.fx
             dv = cube_size / com[2] * self.fy
             box_size = int(du + dv)
 
-            # if self.using_scale:
-            #     scale = (np.random.rand(1) * 0.4 + 0.8)  # random scale [0.8, 1.2]
-            #     # print(scale)
-            #     box_size = box_size * scale
             box_size = max(box_size, 2)
-
 
             crop_img = center_crop(image, (com[1], com[0]), box_size)
             crop_img = crop_img * np.logical_and(crop_img > com[2] - cube_size, crop_img < com[2] + cube_size)
-
-            if self.using_scale:
-                com[2] = com[2] + np.random.rand(1) * 100 - 50
 
             # norm the image and uvd to COM
             crop_img[crop_img > 0] -= com[2] # center the depth image to COM
@@ -246,30 +253,29 @@ class HandDataset(torch.utils.data.Dataset):
                 print("resize error")
                 raise ValueError("Resize error")
 
-            # Generate label_image and mask
-            label_image = cv2.resize(img_resize, (self.label_size, self.label_size))
-            is_hand = label_image != 0
-            mask = is_hand.astype(float)
-
             joint_uvd_centered = joint_uvd - com # center the uvd to COM
             joint_uvd_centered_resize = joint_uvd_centered.copy()
             joint_uvd_centered_resize[:,:2] = joint_uvd_centered_resize[:,:2] / (box_size - 1) * (self.image_size - 1)
 
-            if self.using_rotation:
-                # random rotate the image and the label
-                _img_resize, _joint_uvd_centered_resize = random_rotated(img_resize, joint_uvd_centered_resize)
+            # random rotate the image and the label
+            img_resize, joint_uvd_centered_resize = random_rotated(img_resize, joint_uvd_centered_resize, angle, scale)
+            # change hand size
+            img_resize = img_resize * scale 
+            joint_uvd_centered_resize[:, 2] *= scale
 
             # Generate Heatmap
-            joint_uvd_kernel = _joint_uvd_centered_resize.copy()
+            joint_uvd_kernel = joint_uvd_centered_resize.copy()
             joint_uvd_kernel[:,:2] = joint_uvd_kernel[:,:2] / (self.image_size - 1) * (self.label_size - 1) + \
                 np.array([self.label_size // 2, self.label_size // 2])
 
             # try generate heatmaps with augmented data, which may fail
             heatmaps = [generate_kernel(generate_heatmap(self.label_size, joint_uvd_kernel[i, 0], joint_uvd_kernel[i, 1]), \
                 kernel_size=self.kernel_size, sigmoid=self.sigmoid)[:, :, np.newaxis] for i in range(self.joint_number)]
-            # the augmentation is proved ok, so use the augmented version
-            img_resize = _img_resize
-            joint_uvd_centered_resize = _joint_uvd_centered_resize
+
+            # Generate label_image and mask
+            label_image = cv2.resize(img_resize, (self.label_size, self.label_size))
+            is_hand = label_image != 0
+            mask = is_hand.astype(float)
 
         except: # not performing any data augmentation
             image = _image.copy()
@@ -316,9 +322,10 @@ class HandDataset(torch.utils.data.Dataset):
                 normalized_label_img = torch.from_numpy(normalized_label_img).float().unsqueeze(0)
                 mask = torch.from_numpy(mask).float().unsqueeze(0)
                 box_size = torch.tensor(box_size).float()
+                cube_size = torch.tensor(cube_size).float()
                 com = torch.from_numpy(com).float()
                 
-                return normalized_img, normalized_label_img, mask, box_size, com
+                return normalized_img, normalized_label_img, mask, box_size, cube_size, com
 
             joint_uvd_centered = joint_uvd - com # center the uvd to COM
             joint_uvd_centered_resize = joint_uvd_centered.copy()
@@ -366,20 +373,21 @@ class HandDataset(torch.utils.data.Dataset):
         normalized_label_img = torch.from_numpy(normalized_label_img).float().unsqueeze(0)
         mask = torch.from_numpy(mask).float().unsqueeze(0)
         box_size = torch.tensor(box_size).float()
+        cube_size = torch.tensor(cube_size).float()
         com = torch.from_numpy(com).float()
         normalized_uvd = torch.from_numpy(normalized_uvd).float()
         heatmaps = torch.from_numpy(heatmaps).float().permute(2, 0, 1).contiguous()
         normalized_Dmap = torch.from_numpy(normalized_Dmap).float().permute(2, 0, 1).contiguous()
 
-        return normalized_img, normalized_label_img, mask, box_size, com, normalized_uvd, heatmaps, normalized_Dmap        
+        return normalized_img, normalized_label_img, mask, box_size, cube_size, com, normalized_uvd, heatmaps, normalized_Dmap        
 
 class MSRADataset(HandDataset):
     def __init__(self, fx = 241.42, fy = 241.42, halfu = 160, halfv = 120, path="Data/MSRA", 
                 sigmoid=1.5, image_size=128, kernel_size=7,
-                label_size=64, test_only=False, using_rotation=False, using_scale=False, using_flip=False, 
+                label_size=64, test_only=False, using_rotation=False, using_scale=False, using_shift=False, using_flip=False, 
                 cube_size=120, joint_number=21, dataset='train'):
         super(MSRADataset, self).__init__(fx, fy, halfu, halfv, path, sigmoid, image_size, kernel_size,
-                label_size, test_only, using_rotation, using_scale, using_flip,
+                label_size, test_only, using_rotation, using_scale, using_shift, using_flip,
                 cube_size, joint_number, process_mode='uvd', dataset=dataset)
 
         Index = [0, 1, 2, 3, 4]
@@ -459,12 +467,12 @@ class MSRADataset(HandDataset):
 
         image = np.zeros((self.halfv * 2, self.halfu * 2))
         image[top:bottom, left:right] = img.copy()
-        return image, joint_uvd, None
+        return image, joint_uvd, None, None
 
 class ICVLDataset(HandDataset):
     def __init__(self, fx = 241.42, fy = 241.42, halfu = 160, halfv = 120, path="Data/ICVL/", 
                 sigmoid=1.5, image_size=128, kernel_size=7, label_size=64, 
-                test_only=False, using_rotation=False, using_scale=False, using_flip=False, 
+                test_only=False, using_rotation=False, using_scale=False, using_shift=False, using_flip=False, 
                 cube_size=125, joint_number=16, dataset='train'):
 
         with open(os.path.join(path, 'center.txt'), 'r') as f:
@@ -472,7 +480,7 @@ class ICVLDataset(HandDataset):
         self.centers = np.array(list(map(lambda x: list(map(float, x.strip().split())), centers)))
 
         super(ICVLDataset, self).__init__(fx, fy, halfu, halfv, path, sigmoid, image_size, kernel_size,
-                label_size, test_only, using_rotation, using_scale, using_flip, 
+                label_size, test_only, using_rotation, using_scale, using_shift, using_flip, 
                 cube_size, joint_number, process_mode='uvd', dataset=dataset)
 
         Index = [0, 4, 5, 6]
@@ -635,20 +643,20 @@ class ICVLDataset(HandDataset):
         # image[image > depth_max + 50] = 0
         # image[image < depth_min - 50] = 0
 
-        return image, joint_uvd, None
+        return image, joint_uvd, None, None
 
 class NYUDataset(HandDataset):
     def __init__(self, fx = 588.037, fy =587.075, halfu = 320, halfv = 240, path="Data/NYU/", 
                 sigmoid=1.5, image_size=128, kernel_size=7, label_size=64, 
-                test_only=False, using_rotation=False, using_scale=False, using_flip=False, 
-                cube_size=175, joint_number=14, dataset='train'):
+                test_only=False, using_rotation=False, using_scale=False, using_shift=False, using_flip=False, 
+                cube_size=150, joint_number=14, dataset='train'):
         self.index = [0, 3, 6, 9, 12, 15, 18, 21, 24, 25, 27, 30, 31, 32]
 
         self.train_centers = np.loadtxt(os.path.join(path, 'nyu_center_train.txt'))
         self.test_centers = np.loadtxt(os.path.join(path, 'nyu_center_test.txt'))
 
         super(NYUDataset, self).__init__(fx, fy, halfu, halfv, path, sigmoid, image_size, kernel_size,
-                label_size, test_only, using_rotation, using_scale, using_flip, 
+                label_size, test_only, using_rotation, using_scale, using_shift, using_flip, 
                 cube_size, joint_number, process_mode='uvd', dataset=dataset)
 
         Index = [13, 1, 0]
@@ -758,7 +766,7 @@ class NYUDataset(HandDataset):
             image, uvd
         """
 
-        cube_size = 150
+        cube_size = self.cube_size
 
         path, joint_uvd = super().decode_line_txt(text)
 
@@ -770,10 +778,6 @@ class NYUDataset(HandDataset):
             raise ValueError("file do not exist")
 
         if self.dataset == 'val' or self.dataset == 'test':
-        # if False:
-            # ground truth should not be used, perform a imperical threshold here
-            # MM = np.logical_and(image < 600, image > 100)
-            # image = image * MM
             result = re.findall(r'depth_1_(\d+)', path)
             index = int(result[0]) - 1
             if index > 2440:
@@ -798,6 +802,7 @@ class NYUDataset(HandDataset):
             index = int(result[0]) - 1
             com = self.train_centers[index]
 
+        # use smaller xy to remove more background
         du = (cube_size - 40) / com[2] * self.fx
         dv = (cube_size - 40) / com[2] * self.fy
         left = int(com[0] - du)
@@ -821,11 +826,11 @@ class NYUDataset(HandDataset):
 class HAND17Dataset(HandDataset):
     def __init__(self, fx = 475.065948, fy = 475.065857, halfu = 315.944855, halfv = 245.287079, path="Data/HAND17/", 
                 sigmoid=1.5, image_size=128, kernel_size=7, label_size=64, 
-                test_only=False, using_rotation=False, using_scale=False, using_flip=False, 
+                test_only=False, using_rotation=False, using_scale=False, using_shift=False, using_flip=False, 
                 cube_size=150, joint_number=21, dataset='train'):
 
         super(HAND17Dataset, self).__init__(fx, fy, halfu, halfv, path, sigmoid, image_size, kernel_size,
-                label_size, test_only, using_rotation, using_scale, using_flip, 
+                label_size, test_only, using_rotation, using_scale, using_shift, using_flip, 
                 cube_size, joint_number, process_mode='uvd' if dataset == 'train' else 'bb', dataset=dataset)
 
         Index = [0, 2, 9, 10, 11]
@@ -900,7 +905,7 @@ class HAND17Dataset(HandDataset):
         image[image > depth_max + 50] = 0
         image[image < depth_min - 50] = 0
 
-        return image, joint_uvd
+        return image, joint_uvd, None, None
 
     def load_from_text_bb(self, text):
         l = text.strip().split()

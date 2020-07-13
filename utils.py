@@ -64,19 +64,20 @@ def generate_heatmap(img_size, u, v):
 def generate_kernel(heatmap, kernel_size = 3, sigmoid = 1.5):
     return cv2.GaussianBlur(heatmap, (kernel_size, kernel_size), sigmoid)
 
-def random_rotated(_img, _uvd):
+def random_rotated(_img, _uvd, angle=0, scale=1.0):
     # random rotated the img within -30 ~ 30
     img = _img.copy()
     uvd = _uvd.copy()
 
     angle = random.random() * 60 - 30
     size = img.shape[0]
-    M = cv2.getRotationMatrix2D((size // 2, size // 2), angle, 1.0)
+    M = cv2.getRotationMatrix2D((size // 2, size // 2), angle, scale)
     rot_img = cv2.warpAffine(img, M, (size, size))
     
     angle = angle / 180.0 * np.pi
     Rot = np.array([[np.cos(angle), np.sin(angle)], [-np.sin(angle), np.cos(angle)]])
     uvd[:, :2] = uvd[:, :2] @ Rot.T
+    uvd[:, :2] = uvd[:, :2] * scale
 
     return rot_img, uvd
 
@@ -330,7 +331,7 @@ def select_gpus(gpus="0"):
 
 def recover_uvd(uvd, box_size, com, threshold):
     uvd[:, :, :2] = uvd[:, :, :2] * (box_size - 1).view(-1, 1, 1)
-    uvd[:, :, 2] = uvd[:, :, 2] * threshold
+    uvd[:, :, 2] = uvd[:, :, 2] * threshold.unsqueeze(1)
     uvd = uvd + com.unsqueeze(1)
 
     return uvd

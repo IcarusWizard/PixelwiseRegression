@@ -28,17 +28,18 @@ if __name__ == '__main__':
     parser.add_argument('--label_size', type=int, default=64)
     parser.add_argument('--kernel_size', type=int, default=7)
     parser.add_argument('--sigmoid', type=float, default=1.5)
-    parser.add_argument('--norm_method', type=str, default='batch', help='choose from batch and instance')
+    parser.add_argument('--norm_method', type=str, default='instance', help='choose from batch and instance')
     parser.add_argument('--heatmap_method', type=str, default='softmax', help='choose from softmax and sum')
 
     # need more time to train if using any of these augmentation
     parser.add_argument('--using_rotation', action='store_true')
     parser.add_argument('--using_scale', action='store_true')
+    parser.add_argument('--using_shift', action='store_true')
     parser.add_argument('--using_flip', action='store_true')
     parser.add_argument('--small', action='store_true')
 
     parser.add_argument('--gpu_id', type=str, default="0")
-    parser.add_argument('--epoch', type=int, default=30)
+    parser.add_argument('--epoch', type=int, default=50)
     parser.add_argument("--num_workers", type=int, default=9999)
     parser.add_argument('--stages', type=int, default=2)
     parser.add_argument('--features', type=int, default=128)
@@ -54,8 +55,8 @@ if __name__ == '__main__':
     parser.add_argument('--lambda_d', type=float, default=1.0)
     parser.add_argument('--alpha', type=float, default=1.0)
 
-    parser.add_argument('--lr_decay', type=float, default=1.0)
-    parser.add_argument('--decay_epoch', type=float, default=30)
+    parser.add_argument('--lr_decay', type=float, default=0.2)
+    parser.add_argument('--decay_epoch', type=float, default=15)
 
     args = parser.parse_args()
 
@@ -73,6 +74,7 @@ if __name__ == '__main__':
         "sigmoid" : args.sigmoid,
         "using_rotation" : args.using_rotation,
         "using_scale" : args.using_scale,
+        "using_shift" : args.using_shift,
         "using_flip" : args.using_flip,
     }
 
@@ -84,6 +86,7 @@ if __name__ == '__main__':
         "sigmoid" : args.sigmoid,
         "using_rotation" : False,
         "using_scale" : False,
+        "using_shift" : False,
         "using_flip" : False,
     }
 
@@ -145,12 +148,12 @@ if __name__ == '__main__':
     total_steps = steps_per_epoch * args.epoch
 
     best_epoch = 0
-    best_loss = 9999999
+    best_error = 9999999
 
     with tqdm(total=total_steps) as pbar:
         for epoch in range(args.epoch):
             for batch in iter(train_loader):
-                img, label_img, mask, box_size, com, uvd, heatmaps, depthmaps = batch
+                img, label_img, mask, box_size, cube_size, com, uvd, heatmaps, depthmaps = batch
                 
                 img = img.to(device, non_blocking=True)
                 label_img = label_img.to(device, non_blocking=True)
@@ -207,7 +210,7 @@ if __name__ == '__main__':
 
                 for val_batch in iter(val_loader):
                     num += 1
-                    img, label_img, mask, box_size, com, uvd, heatmaps, depthmaps = val_batch
+                    img, label_img, mask, box_size, cube_size, com, uvd, heatmaps, depthmaps = val_batch
                     
                     img = img.to(device, non_blocking=True)
                     label_img = label_img.to(device, non_blocking=True)
@@ -219,7 +222,7 @@ if __name__ == '__main__':
                     results = model(img, label_img, mask)
 
                     true_uvd = uvd.cpu()
-                    true_uvd = recover_uvd(true_uvd, box_size, com, valset.cube_size)
+                    true_uvd = recover_uvd(true_uvd, box_size, com, cube_size)
                     true_uvd = true_uvd.numpy()
 
                     true_xyz = valset.uvd2xyz(true_uvd)
@@ -236,7 +239,7 @@ if __name__ == '__main__':
                             _uvd_loss + uvd_loss))
 
                         _uvd = _uvd.cpu()
-                        _uvd = recover_uvd(_uvd, box_size, com, valset.cube_size)
+                        _uvd = recover_uvd(_uvd, box_size, com, cube_size)
                         _uvd = _uvd.numpy()
 
                         _xyz = valset.uvd2xyz(_uvd)
@@ -279,9 +282,9 @@ if __name__ == '__main__':
 
             save_model(model, os.path.join('Model', model_name.format(epoch)), seed=seed, model_param=model_parameters)
 
-            if val_every_loss[-1][-1] < best_loss:
+            if dataset_results[-1] < best_error:
                 best_epoch = epoch
-                best_loss = val_every_loss[-1][-1]
+                best_error = dataset_results[-1]
 
     print("best epoch is {}".format(best_epoch))
     os.system('cp {} {}'.format(os.path.join('Model', model_name.format(best_epoch)), os.path.join('Model', model_name.format('final'))))
