@@ -475,9 +475,16 @@ class ICVLDataset(HandDataset):
                 test_only=False, using_rotation=False, using_scale=False, using_shift=False, using_flip=False, 
                 cube_size=125, joint_number=16, dataset='train'):
 
-        with open(os.path.join(path, 'center.txt'), 'r') as f:
-            centers = f.readlines()
-        self.centers = np.array(list(map(lambda x: list(map(float, x.strip().split())), centers)))
+        with open(os.path.join(path, 'icvl_train_list.txt')) as f:
+            train_list = f.readlines()
+        
+        self.train_lookup = {}
+        for index, name in enumerate(train_list):
+            name = name.strip()
+            self.train_lookup[name] = index
+
+        self.train_centers = np.loadtxt(os.path.join(path, 'icvl_center_train.txt'))
+        self.test_centers = np.loadtxt(os.path.join(path, 'icvl_center_test.txt'))
 
         super(ICVLDataset, self).__init__(fx, fy, halfu, halfv, path, sigmoid, image_size, kernel_size,
                 label_size, test_only, using_rotation, using_scale, using_shift, using_flip, 
@@ -489,10 +496,6 @@ class ICVLDataset(HandDataset):
         Small = [0, 13, 14, 15]
         Thumb = [0, 1, 2, 3]
         self.config = [Thumb, Index, Mid, Ring, Small]
-
-        with open(os.path.join(self.path, 'center.txt'), 'r') as f:
-            centers = f.readlines()
-        self.centers = np.array(list(map(lambda x: list(map(float, x.strip().split())), centers)))
 
     def build_data(self):
         if self.data_ready:
@@ -592,17 +595,12 @@ class ICVLDataset(HandDataset):
             raise ValueError("file do not exist")
         
         if self.dataset == 'val' or self.dataset == 'test':
-        # if False:
-        # if self.dataset == 'test':
-            # ground truth should not be used, perform a imperical threshold here
-            # MM = np.logical_and(image < 600, image > 100)
-            # image = image * MM
             result = re.findall(r'test_seq_(\d)/image_(\d+)', path)[0]
             subject = int(result[0])
             index = int(result[1])
             if subject == 2:
                 index += 702
-            com = self.centers[index]
+            com = self.test_centers[index]
         else:
             # # crop the image by boundary box
             # uv = joint_uvd[:, :2]
@@ -615,12 +613,15 @@ class ICVLDataset(HandDataset):
             # MM = np.zeros(image.shape)
             # MM[top:buttom, left:right] = 1
             # image = image * MM
-            com = np.mean(joint_uvd, axis=0)
+            path = '/'.join(path.split('/')[-2:])
+            index = self.train_lookup[path]
+            com = self.train_centers[index]
+            # com = np.mean(joint_uvd, axis=0)
 
-        cube_size = 125
+        cube_size = self.cube_size
 
-        du = cube_size / com[2] * self.fx
-        dv = cube_size / com[2] * self.fy
+        du = (cube_size - 30) / com[2] * self.fx
+        dv = (cube_size - 30) / com[2] * self.fy
         left = int(com[0] - du)
         right = int(com[0] + du)
         top = int(com[1] - dv)
@@ -643,7 +644,7 @@ class ICVLDataset(HandDataset):
         # image[image > depth_max + 50] = 0
         # image[image < depth_min - 50] = 0
 
-        return image, joint_uvd, None, None
+        return image, joint_uvd, com, None
 
 class NYUDataset(HandDataset):
     def __init__(self, fx = 588.037, fy =587.075, halfu = 320, halfv = 240, path="Data/NYU/", 
@@ -780,7 +781,7 @@ class NYUDataset(HandDataset):
         if self.dataset == 'val' or self.dataset == 'test':
             result = re.findall(r'depth_1_(\d+)', path)
             index = int(result[0]) - 1
-            if index > 2440:
+            if index > 2440: # another person whose hands are relevant smaller
                 cube_size = int(cube_size * 5 / 6)
             com = self.test_centers[index]
             # com[2] -= 10
