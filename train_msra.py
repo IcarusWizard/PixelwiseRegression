@@ -49,8 +49,9 @@ if __name__ == '__main__':
     parser.add_argument('--beta1', type=float, default=0.9)
     parser.add_argument('--beta2', type=float, default=0.999)
     parser.add_argument('--weight_decay', type=float, default=0)
+    parser.add_argument('--mixed_precision', action='store_true', help='enbale mixed precision training')
     parser.add_argument("--lambda_h", type=float, default=1.0)
-    parser.add_argument('--lambda_d', type=float, default=1.0)
+    parser.add_argument('--lambda_d', type=float, default=0.01)
     parser.add_argument('--alpha', type=float, default=1.0)
 
     parser.add_argument('--lr_decay', type=float, default=0.2)
@@ -140,8 +141,10 @@ if __name__ == '__main__':
         optim = torch.optim.AdamW(model.parameters(), lr=args.lr, betas=(args.beta1, args.beta2), weight_decay=args.weight_decay)
     elif args.opt == 'sgd':
         optim = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=args.beta1, weight_decay=args.weight_decay)
-
     scheduler = torch.optim.lr_scheduler.StepLR(optim, step_size=args.decay_epoch, gamma=args.lr_decay)
+    if args.mixed_precision:
+        scaler = torch.cuda.amp.GradScaler()
+
     writer = SummaryWriter('logs/{}'.format(log_name))
 
     steps_per_epoch = len(trainset) // args.batch_size
@@ -163,26 +166,50 @@ if __name__ == '__main__':
                 heatmaps = heatmaps.to(device, non_blocking=True)
                 depthmaps = depthmaps.to(device, non_blocking=True)
 
-                results = model(img, label_img, mask)
-
-                every_loss = []
-                for i, result in enumerate(results):
-                    _heatmaps, _depthmaps, _uvd = result
-                    heatmap_loss = args.lambda_h * torch.mean(torch.sum((_heatmaps - heatmaps) ** 2, dim=(2, 3)))
-                    depthmap_loss = args.lambda_d * torch.mean(torch.sum((_depthmaps - depthmaps) ** 2, dim=(2, 3)))
-                    uvd_loss = torch.mean(torch.sum((_uvd - uvd) ** 2, dim=2))
-                    every_loss.append((heatmap_loss, depthmap_loss, uvd_loss))
-
-                loss = 0
-                for losses in every_loss:
-                    heatmap_loss, depthmap_loss, uvd_loss = losses
-                    loss = loss + args.alpha * uvd_loss + (1 - args.alpha) * (heatmap_loss + depthmap_loss) 
-
                 optim.zero_grad()
-                loss.backward()
-                optim.step()
+
+                if args.mixed_precision: # mixed precision training code
+                    with torch.cuda.amp.autocast():
+                        results = model(img, label_img, mask)
+
+                        every_loss = []
+                        for i, result in enumerate(results):
+                            _heatmaps, _depthmaps, _uvd = result
+                            heatmap_loss = args.lambda_h * torch.mean(torch.sum((_heatmaps - heatmaps) ** 2, dim=(2, 3)))
+                            depthmap_loss = args.lambda_d * torch.mean(torch.sum((_depthmaps - depthmaps) ** 2, dim=(2, 3)))
+                            uvd_loss = torch.mean(torch.sum((_uvd - uvd) ** 2, dim=2))
+                            every_loss.append((heatmap_loss, depthmap_loss, uvd_loss))
+
+                        loss = 0
+                        for losses in every_loss:
+                            heatmap_loss, depthmap_loss, uvd_loss = losses
+                            loss = loss + args.alpha * uvd_loss + (1 - args.alpha) * (heatmap_loss + depthmap_loss) 
+
+                    scaler.scale(loss).backward()
+                    scaler.step(optim)
+                    scaler.update()
+
+                else: # normal training code
+                    results = model(img, label_img, mask)
+
+                    every_loss = []
+                    for i, result in enumerate(results):
+                        _heatmaps, _depthmaps, _uvd = result
+                        heatmap_loss = args.lambda_h * torch.mean(torch.sum((_heatmaps - heatmaps) ** 2, dim=(2, 3)))
+                        depthmap_loss = args.lambda_d * torch.mean(torch.sum((_depthmaps - depthmaps) ** 2, dim=(2, 3)))
+                        uvd_loss = torch.mean(torch.sum((_uvd - uvd) ** 2, dim=2))
+                        every_loss.append((heatmap_loss, depthmap_loss, uvd_loss))
+
+                    loss = 0
+                    for losses in every_loss:
+                        heatmap_loss, depthmap_loss, uvd_loss = losses
+                        loss = loss + args.alpha * uvd_loss + (1 - args.alpha) * (heatmap_loss + depthmap_loss) 
+
+                    loss.backward()
+                    optim.step()
 
                 pbar.update(1)
+
             scheduler.step()
 
             # log image results in tensorboard
@@ -193,6 +220,9 @@ if __name__ == '__main__':
             writer.add_image('input_skeleton', skeleton, global_step=epoch)
             for i, result in enumerate(results):
                 _heatmaps, _depthmaps, _uvd = result
+                _heatmaps = _heatmaps.float()
+                _depthmaps = _depthmaps.float()
+                _uvd = _uvd.float()
                 writer.add_figure('stage{}_heatmap'.format(i), draw_features_torch(_heatmaps[0]), global_step=epoch)
                 writer.add_figure('stage{}_depthmap'.format(i), draw_features_torch(_depthmaps[0]), global_step=epoch)
                 _skeleton = draw_skeleton_torch(img[0].cpu(), _uvd[0].detach().cpu(), config)
