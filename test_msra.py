@@ -46,6 +46,7 @@ if __name__ == '__main__':
         "sigmoid" : args.sigmoid,
         "dataset" : "test",
         "test_only" : True,
+        "subject" : args.subject,
     }
 
     test_loader_parameters = {
