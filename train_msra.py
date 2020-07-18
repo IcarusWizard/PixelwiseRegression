@@ -30,11 +30,10 @@ if __name__ == '__main__':
     parser.add_argument('--heatmap_method', type=str, default='softmax', help='choose from softmax and sum')
 
     # need more time to train if using any of these augmentation
-    parser.add_argument('--using_rotation', action='store_true')
-    parser.add_argument('--using_scale', action='store_true')
-    parser.add_argument('--using_shift', action='store_true')
-    parser.add_argument('--using_flip', action='store_true')
-    parser.add_argument('--small', action='store_true')
+    parser.add_argument('--using_rotation', type=lambda x: [False, True][int(x)], default=True)
+    parser.add_argument('--using_scale', type=lambda x: [False, True][int(x)], default=True)
+    parser.add_argument('--using_shift', type=lambda x: [False, True][int(x)], default=True)
+    parser.add_argument('--using_flip', type=lambda x: [False, True][int(x)], default=False)
 
     parser.add_argument('--gpu_id', type=str, default="0")
     parser.add_argument('--epoch', type=int, default=50)
@@ -66,7 +65,7 @@ if __name__ == '__main__':
     setup_seed(seed) 
 
     trainset_parameters = {
-        "dataset" : "train" if not args.small else "small_train",
+        "dataset" : "train",
         "image_size" : args.label_size * 2,
         "label_size" : args.label_size,
         "kernel_size" : args.kernel_size,
@@ -79,7 +78,7 @@ if __name__ == '__main__':
     }
 
     valset_parameters = {
-        "dataset" : "val" if not args.small else "small_val",
+        "dataset" : "val",
         "image_size" : args.label_size * 2,
         "label_size" : args.label_size,
         "kernel_size" : args.kernel_size,

@@ -38,7 +38,7 @@ if __name__ == '__main__':
     parser.add_argument('--gpu_id', type=str, default='0')
     parser.add_argument('--epoch', type=int, default=50)
     parser.add_argument("--num_workers", type=int, default=9999)
-    parser.add_argument('--stages', type=int, default=1)
+    parser.add_argument('--stages', type=int, default=2)
     parser.add_argument('--features', type=int, default=128)
     parser.add_argument('--level', type=int, default=4)
 
@@ -259,6 +259,15 @@ if __name__ == '__main__':
             model.train()
             # log scalas in tensorboard
             writer.add_scalars('loss', {'train' : loss.item(), 'val' : val_loss.item()}, global_step=epoch)
+            for i in range(len(every_loss)):
+                train_uvd_loss = every_loss[i]
+                val_uvd_loss = val_every_loss[i]
+
+                writer.add_scalars('stage{}_uvd_loss'.format(i), 
+                    {'train' : train_uvd_loss, 'val' : val_uvd_loss},
+                    global_step=epoch
+                )
+                writer.add_scalar('stage{}_result'.format(i), dataset_results[i], global_step=epoch)
 
             save_model(model, os.path.join('Model', model_name.format(epoch)), seed=seed, model_param=model_parameters)
 
