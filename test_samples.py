@@ -4,12 +4,13 @@ import torch, torchvision
 
 import os, argparse
 from tqdm import tqdm
+import cv2
 
 from model import PixelwiseRegression
 import datasets
 from utils import load_model, recover_uvd, select_gpus
 
-def draw_skeleton(_img, joints, *, output_size=512, rP = 8, linewidth = 4, draw=True, skeleton_mode=0):
+def draw_skeleton(_img, joints, *, output_size=512, rP = 8, linewidth = 4, draw=False, skeleton_mode=0):
     fig, axes = plt.subplots(figsize=(4, 4))
     if joints.shape[0] == 14:
         Index = [13, 1, 0]
@@ -174,7 +175,7 @@ if __name__ == '__main__':
 
     index = 0
     for batch in iter(test_loader):
-        img, label_img, mask, box_size, com, uvd, heatmaps, depthmaps = batch
+        img, label_img, mask, box_size, cube_size, com, uvd, heatmaps, depthmaps = batch
         
         img = img.to(device, non_blocking=True)
         label_img = label_img.to(device, non_blocking=True)
@@ -190,6 +191,9 @@ if __name__ == '__main__':
 
         skeleton_gt = draw_skeleton(img[0,0], uvd[0,:,:2])
         skeleton_pre = draw_skeleton(img[0,0], _uvd[0,:,:2])
+        skeleton_gt = np.clip(skeleton_gt, 0, 1)
+        skeleton_pre = np.clip(skeleton_pre, 0, 1)
+        
 
         cv2.imshow("predict", skeleton_pre)
         cv2.imshow("ground_truth", skeleton_gt)
