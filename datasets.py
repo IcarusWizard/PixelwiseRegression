@@ -1,5 +1,6 @@
 import torch, torchvision
 
+import ray
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.ndimage.measurements import center_of_mass # use to compute center of mass (row, col)
@@ -12,6 +13,26 @@ import multiprocessing as mp
 
 from utils import load_bin, draw_skeleton, center_crop, \
     generate_com_filter, floodFillDepth, generate_heatmap, random_rotated, generate_kernel
+
+@ray.remote
+class Reporter:
+    def __init__(self, total):
+        self.timer = tqdm(total=total)
+    
+    def update(self):
+        self.timer.update(1)
+
+@ray.remote
+def check_texts(dataset, texts, reporter):
+    """
+        A helper function to check the dataset
+    """
+    results = []
+    for text in texts:
+        if dataset.check_text(text):
+            results.append(text)
+        reporter.update.remote()
+    return results
 
 class HandDataset(torch.utils.data.Dataset):
     def __init__(self, fx, fy, halfu, halfv, path, sigmoid, image_size, kernel_size,
@@ -453,24 +474,18 @@ class MSRADataset(HandDataset):
             with open(dataname, 'r') as f:
                 datatexts.append(f.readlines())
         
-        pool = mp.Pool(processes=os.cpu_count())
+        ray.init()
         for i in range(9):
-            processing = []
-            for text in datatexts[i]:
-                r = pool.apply_async(self.check_text, (text, ))
-                processing.append(r)
-
+            reporter = Reporter.remote(len(datatexts[i]))
+            chunk = len(datatexts[i]) // (os.cpu_count() - 1) + 1
             traintxt = []
-            with tqdm(total=len(datatexts[i])) as pbar:
-                for r in processing:
-                    text = r.get()
-                    if text:
-                        traintxt.append(text)
-                    pbar.update(1)
+            processing = [check_texts.remote(self, datatexts[i][j * chunk : (j + 1) * chunk], reporter) for j in range(os.cpu_count() - 1)]
+            for r in ray.get(processing):
+                traintxt += r
 
             traintxts.append(traintxt)
             print('For person {}, {} / {} data can use to train'.format(i, len(traintxt), len(datatexts[i])))
-        pool.close()
+        ray.shutdown()
         
         for i in range(9):
             train_to_write = []
@@ -588,21 +603,14 @@ class ICVLDataset(HandDataset):
                 datatexts.append(" ".join(words))
 
             print('checking data ......')
-
-            pool = mp.Pool(processes=os.cpu_count())
-            processing = []
-            for text in datatexts:
-                r = pool.apply_async(self.check_text, (text, ))
-                processing.append(r)
-
+            ray.init()
+            reporter = Reporter.remote(len(datatexts))
+            chunk = len(datatexts) // (os.cpu_count() - 1) + 1
             traintxt = []
-            with tqdm(total=len(datatexts)) as pbar:
-                for r in processing:
-                    text = r.get()
-                    if text:
-                        traintxt.append(text)
-                    pbar.update(1)
-            pool.close()
+            processing = [check_texts.remote(self, datatexts[i * chunk : (i + 1) * chunk], reporter) for i in range(os.cpu_count() - 1)]
+            for r in ray.get(processing):
+                traintxt += r
+            ray.shutdown()
             
             print('{} / {} data can use to train'.format(len(traintxt), len(datatexts)))
 
@@ -727,20 +735,14 @@ class NYUDataset(HandDataset):
 
             print('checking data ......')
 
-            pool = mp.Pool(processes=os.cpu_count())
-            processing = []
-            for text in datatexts:
-                r = pool.apply_async(self.check_text, (text, ))
-                processing.append(r)
-
+            ray.init()
+            reporter = Reporter.remote(len(datatexts))
+            chunk = len(datatexts) // (os.cpu_count() - 1) + 1
             traintxt = []
-            with tqdm(total=len(datatexts)) as pbar:
-                for r in processing:
-                    text = r.get()
-                    if text:
-                        traintxt.append(text)
-                    pbar.update(1)
-            pool.close()
+            processing = [check_texts.remote(self, datatexts[i * chunk : (i + 1) * chunk], reporter) for i in range(os.cpu_count() - 1)]
+            for r in ray.get(processing):
+                traintxt += r
+            ray.shutdown()
             
             print('{} / {} data can use to train'.format(len(traintxt), len(datatexts)))
 
@@ -769,20 +771,14 @@ class NYUDataset(HandDataset):
 
             print('checking data ......')
 
-            pool = mp.Pool(processes=os.cpu_count())
-            processing = []
-            for text in test_set:
-                r = pool.apply_async(self.check_text, (text, ))
-                processing.append(r)
-
+            ray.init()
+            reporter = Reporter.remote(len(test_set))
+            chunk = len(test_set) // (os.cpu_count() - 1) + 1
             valtxt = []
-            with tqdm(total=len(test_set)) as pbar:
-                for r in processing:
-                    text = r.get()
-                    if text:
-                        valtxt.append(text)
-                    pbar.update(1)
-            pool.close()
+            processing = [check_texts.remote(self, test_set[i * chunk : (i + 1) * chunk], reporter) for i in range(os.cpu_count() - 1)]
+            for r in ray.get(processing):
+                valtxt += r
+            ray.shutdown()
             
             print('{} / {} data can use as valadation'.format(len(valtxt), len(test_set)))
 
@@ -856,10 +852,13 @@ class NYUDataset(HandDataset):
         return image, joint_uvd, com, cube_size
 
 class HAND17Dataset(HandDataset):
-    def __init__(self, fx = 475.065948, fy = 475.065857, halfu = 315.944855, halfv = 245.287079, path="Data/HAND17/", 
+    def __init__(self, fx=475.065948, fy=475.065857, halfu=315.944855, halfv=245.287079, path="Data/HAND17/", 
                 sigmoid=1.5, image_size=128, kernel_size=7, label_size=64, 
                 test_only=False, using_rotation=False, using_scale=False, using_shift=False, using_flip=False, 
                 cube_size=150, joint_number=21, dataset='train'):
+
+        self.train_centers = np.loadtxt(os.path.join(path, 'hands17_center_train.txt'))
+        self.test_centers = np.loadtxt(os.path.join(path, 'hands17_center_test.txt'))
 
         super(HAND17Dataset, self).__init__(fx, fy, halfu, halfv, path, sigmoid, image_size, kernel_size,
                 label_size, test_only, using_rotation, using_scale, using_shift, using_flip, 
@@ -888,56 +887,96 @@ class HAND17Dataset(HandDataset):
         with open(os.path.join(self.path, 'training', 'Training_Annotation.txt'), 'r') as f:
             datatexts = f.readlines()
 
-        pool = mp.Pool(processes=os.cpu_count())
-        processing = []
-        for text in datatexts:
-            r = pool.apply_async(self.check_text, (text, ))
-            processing.append(r)
+        ray.init()
+        reporter = Reporter.remote(len(datatexts))
+        chunk = len(datatexts) // (os.cpu_count() - 1) + 1
+
+        # pool = mp.Pool(processes=os.cpu_count() - 1)
+        # processing = []
+        # # for text in datatexts:
+        # #     r = pool.apply_async(self.check_text, (text, ))
+        # #     processing.append(r)
+        # for i in range(os.cpu_count() - 1):
+        #     r = pool.apply_async(self.check_texts, (datatexts[i * chunk : (i + 1) * chunk], reporter))  
+        #     processing.append(r)
+
+        # traintxt = []
+        # # with tqdm(total=len(datatexts)) as pbar:
+        # #     for r in processing:
+        # #         text = r.get()
+        # #         if text:
+        # #             traintxt.append(text)
+        # #         pbar.update(1)
+        # for r in processing:
+        #     texts = r.get()
+        #     traintxt += texts
+
+        # pool.close()
 
         traintxt = []
-        with tqdm(total=len(datatexts)) as pbar:
-            for r in processing:
-                text = r.get()
-                if text:
-                    traintxt.append(text)
-                pbar.update(1)
-        pool.close()
+        processing = [check_texts.remote(self, datatexts[i * chunk : (i + 1) * chunk], reporter) for i in range(os.cpu_count() - 1)]
+        for r in ray.get(processing):
+            traintxt += r
+
+        ray.shutdown()
         
         print('{} / {} data can use to train'.format(len(traintxt), len(datatexts)))
+
+        random.seed(0)
+        random.shuffle(traintxt)
+        total_size = len(traintxt)
+
+        train_size = total_size * 95 // 100
+        val_size = total_size - train_size
+
+        valtxt = traintxt[train_size:]
+        traintxt = traintxt[:train_size]
+
+        print(f'split {train_size} for training and {val_size} for validation')
+
         with open(os.path.join(self.path, "train.txt"), 'w') as f:
             f.writelines(traintxt)
-        
+
+        with open(os.path.join(self.path, "val.txt"), 'w') as f:
+            f.writelines(valtxt)
+
     def load_from_text(self, text):
         """
             This function decode the text and load the image with only hand and the uvd coordinate of joints
             OUTPUT:
                 image, uvd
         """
+        cube_size = self.cube_size
+
         path, joint_xyz = super().decode_line_txt(text)
         joint_uvd = self.xyz2uvd(joint_xyz)
 
         image = plt.imread(os.path.join(self.path, 'training', 'images', path)) * 65535
 
-        # crop the image by boundary box
-        uv = joint_uvd[:, :2]
-        left, top = np.min(uv, axis=0) - 20
-        right, buttom = np.max(uv, axis=0) + 20
-        left = max(int(left), 0)
-        top = max(int(top), 0)
-        right = min(int(right), 640)
-        buttom = min(int(buttom), 480)
-        MM = np.zeros(image.shape)
+        result = re.findall(r'image_D(\d+)', path)
+        index = int(result[0]) - 1
+        com = self.train_centers[index]
+
+        # use smaller xy to remove more background
+        du = (cube_size - 40) / com[2] * self.fx
+        dv = (cube_size - 40) / com[2] * self.fy
+        left = int(com[0] - du)
+        right = int(com[0] + du)
+        top = int(com[1] - dv)
+        buttom = int(com[1] + dv)
+        left = max(left, 0)
+        top = max(top, 0)
+        right = min(right, self.halfu * 2)
+        buttom = min(buttom, self.halfv * 2)
+        MM = np.zeros_like(image)
         MM[top:buttom, left:right] = 1
         image = image * MM
 
-        # remove the background in the boundary box
-        depth = joint_uvd[:, 2]
-        depth_max = np.max(depth)
-        depth_min = np.min(depth)
-        image[image > depth_max + 50] = 0
-        image[image < depth_min - 50] = 0
+        MM = np.logical_and(image < com[2] + cube_size, image > com[2] - cube_size)
 
-        return image, joint_uvd, None, None
+        image = image * MM
+
+        return image, joint_uvd, com, cube_size
 
     def load_from_text_bb(self, text):
         l = text.strip().split()
