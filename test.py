@@ -25,6 +25,7 @@ if __name__ == '__main__':
     parser.add_argument('--sigmoid', type=float, default=1.5)
     parser.add_argument('--norm_method', type=str, default='instance', help='choose from batch and instance')
     parser.add_argument('--heatmap_method', type=str, default='softmax', help='choose from softmax and sum')
+    parser.add_argument('--process_mode', type=str, default='uvd', help='choose from uvd and bb')
     parser.add_argument('--filter_size', type=int, default=3)
 
     parser.add_argument('--gpu_id', type=str, default='0')
@@ -47,6 +48,7 @@ if __name__ == '__main__':
         "kernel_size" : args.kernel_size,
         "sigmoid" : args.sigmoid,
         "dataset" : "test",
+        "process_mode" : args.process_mode,
         "test_only" : True,
     }
 

@@ -300,7 +300,6 @@ class HandDataset(torch.utils.data.Dataset):
 
         except: # not performing any data augmentation
             image = _image.copy()
-            joint_uvd = _joint_uvd.copy()
             com = _com.copy()
 
             # crop the image
@@ -348,6 +347,7 @@ class HandDataset(torch.utils.data.Dataset):
                 
                 return normalized_img, normalized_label_img, mask, box_size, cube_size, com
 
+            joint_uvd = _joint_uvd.copy()
             joint_uvd_centered = joint_uvd - com # center the uvd to COM
             joint_uvd_centered_resize = joint_uvd_centered.copy()
             joint_uvd_centered_resize[:,:2] = joint_uvd_centered_resize[:,:2] / (box_size - 1) * (self.image_size - 1)
@@ -406,14 +406,16 @@ class MSRADataset(HandDataset):
     def __init__(self, fx=241.42, fy=241.42, halfu=160, halfv=120, path="Data/MSRA", 
                 sigmoid=1.5, image_size=128, kernel_size=7,
                 label_size=64, test_only=False, using_rotation=False, using_scale=False, using_shift=False, using_flip=False, 
-                cube_size=125, joint_number=21, dataset='train', subject=0):
-
+                cube_size=125, joint_number=21, dataset='train', process_mode='uvd', subject=0):
+        
+        assert process_mode == 'uvd', 'MSRA only support uvd process mode'
+        
         self.subject = subject
         dataset = dataset + '_{}'.format(subject)
 
         super(MSRADataset, self).__init__(fx, fy, halfu, halfv, path, sigmoid, image_size, kernel_size,
                 label_size, test_only, using_rotation, using_scale, using_shift, using_flip,
-                cube_size, joint_number, process_mode='uvd', dataset=dataset)
+                cube_size, joint_number, process_mode=process_mode, dataset=dataset)
 
         Index = [0, 1, 2, 3, 4]
         Mid = [0, 5, 6, 7, 8]
@@ -516,10 +518,12 @@ class MSRADataset(HandDataset):
         return image, joint_uvd, None, None
 
 class ICVLDataset(HandDataset):
-    def __init__(self, fx = 241.42, fy = 241.42, halfu = 160, halfv = 120, path="Data/ICVL/", 
+    def __init__(self, fx=241.42, fy=241.42, halfu=160, halfv=120, path="Data/ICVL/", 
                 sigmoid=1.5, image_size=128, kernel_size=7, label_size=64, 
                 test_only=False, using_rotation=False, using_scale=False, using_shift=False, using_flip=False, 
-                cube_size=125, joint_number=16, dataset='train'):
+                cube_size=125, joint_number=16, dataset='train', process_mode='uvd'):
+
+        assert process_mode == 'uvd', 'ICVL only support uvd process mode'
 
         with open(os.path.join(path, 'icvl_train_list.txt')) as f:
             train_list = f.readlines()
@@ -534,7 +538,7 @@ class ICVLDataset(HandDataset):
 
         super(ICVLDataset, self).__init__(fx, fy, halfu, halfv, path, sigmoid, image_size, kernel_size,
                 label_size, test_only, using_rotation, using_scale, using_shift, using_flip, 
-                cube_size, joint_number, process_mode='uvd', dataset=dataset)
+                cube_size, joint_number, process_mode=process_mode, dataset=dataset)
 
         Index = [0, 4, 5, 6]
         Mid = [0, 7, 8, 9]
@@ -686,10 +690,13 @@ class ICVLDataset(HandDataset):
         return image, joint_uvd, com, None
 
 class NYUDataset(HandDataset):
-    def __init__(self, fx = 588.037, fy =587.075, halfu = 320, halfv = 240, path="Data/NYU/", 
+    def __init__(self, fx=588.037, fy=587.075, halfu=320, halfv=240, path="Data/NYU/", 
                 sigmoid=1.5, image_size=128, kernel_size=7, label_size=64, 
                 test_only=False, using_rotation=False, using_scale=False, using_shift=False, using_flip=False, 
-                cube_size=150, joint_number=14, dataset='train'):
+                cube_size=150, joint_number=14, dataset='train', process_mode='uvd'):
+
+        assert process_mode == 'uvd', 'NYU only support uvd process mode'
+
         self.index = [0, 3, 6, 9, 12, 15, 18, 21, 24, 25, 27, 30, 31, 32]
 
         self.train_centers = np.loadtxt(os.path.join(path, 'nyu_center_train.txt'))
@@ -697,7 +704,7 @@ class NYUDataset(HandDataset):
 
         super(NYUDataset, self).__init__(fx, fy, halfu, halfv, path, sigmoid, image_size, kernel_size,
                 label_size, test_only, using_rotation, using_scale, using_shift, using_flip, 
-                cube_size, joint_number, process_mode='uvd', dataset=dataset)
+                cube_size, joint_number, process_mode=process_mode, dataset=dataset)
 
         Index = [13, 1, 0]
         Mid = [13, 3, 2]
@@ -855,14 +862,14 @@ class HAND17Dataset(HandDataset):
     def __init__(self, fx=475.065948, fy=475.065857, halfu=315.944855, halfv=245.287079, path="Data/HAND17/", 
                 sigmoid=1.5, image_size=128, kernel_size=7, label_size=64, 
                 test_only=False, using_rotation=False, using_scale=False, using_shift=False, using_flip=False, 
-                cube_size=150, joint_number=21, dataset='train'):
+                cube_size=150, joint_number=21, dataset='train', process_mode='uvd'):
 
         self.train_centers = np.loadtxt(os.path.join(path, 'hands17_center_train.txt'))
         self.test_centers = np.loadtxt(os.path.join(path, 'hands17_center_test.txt'))
 
         super(HAND17Dataset, self).__init__(fx, fy, halfu, halfv, path, sigmoid, image_size, kernel_size,
                 label_size, test_only, using_rotation, using_scale, using_shift, using_flip, 
-                cube_size, joint_number, process_mode='uvd' if dataset == 'train' else 'bb', dataset=dataset)
+                cube_size, joint_number, process_mode=process_mode, dataset=dataset)
 
         Index = [0, 2, 9, 10, 11]
         Mid = [0, 3, 12, 13, 14]
@@ -890,28 +897,6 @@ class HAND17Dataset(HandDataset):
         ray.init()
         reporter = Reporter.remote(len(datatexts))
         chunk = len(datatexts) // (os.cpu_count() - 1) + 1
-
-        # pool = mp.Pool(processes=os.cpu_count() - 1)
-        # processing = []
-        # # for text in datatexts:
-        # #     r = pool.apply_async(self.check_text, (text, ))
-        # #     processing.append(r)
-        # for i in range(os.cpu_count() - 1):
-        #     r = pool.apply_async(self.check_texts, (datatexts[i * chunk : (i + 1) * chunk], reporter))  
-        #     processing.append(r)
-
-        # traintxt = []
-        # # with tqdm(total=len(datatexts)) as pbar:
-        # #     for r in processing:
-        # #         text = r.get()
-        # #         if text:
-        # #             traintxt.append(text)
-        # #         pbar.update(1)
-        # for r in processing:
-        #     texts = r.get()
-        #     traintxt += texts
-
-        # pool.close()
 
         traintxt = []
         processing = [check_texts.remote(self, datatexts[i * chunk : (i + 1) * chunk], reporter) for i in range(os.cpu_count() - 1)]
@@ -948,14 +933,24 @@ class HAND17Dataset(HandDataset):
         """
         cube_size = self.cube_size
 
-        path, joint_xyz = super().decode_line_txt(text)
-        joint_uvd = self.xyz2uvd(joint_xyz)
+        if not self.dataset == 'test':
+            path, joint_xyz = super().decode_line_txt(text)
+            joint_uvd = self.xyz2uvd(joint_xyz)
 
-        image = plt.imread(os.path.join(self.path, 'training', 'images', path)) * 65535
+            image = plt.imread(os.path.join(self.path, 'training', 'images', path)) * 65535
 
-        result = re.findall(r'image_D(\d+)', path)
-        index = int(result[0]) - 1
-        com = self.train_centers[index]
+            result = re.findall(r'image_D(\d+)', path)
+            index = int(result[0]) - 1
+            com = self.train_centers[index]
+        else:
+            path = text.strip().split()[0]
+            joint_uvd = None
+
+            image = plt.imread(os.path.join(self.path, 'frame', 'images', path)) * 65535
+
+            result = re.findall(r'image_D(\d+)', path)
+            index = int(result[0]) - 1
+            com = self.test_centers[index]
 
         # use smaller xy to remove more background
         du = (cube_size - 40) / com[2] * self.fx
@@ -966,8 +961,8 @@ class HAND17Dataset(HandDataset):
         buttom = int(com[1] + dv)
         left = max(left, 0)
         top = max(top, 0)
-        right = min(right, self.halfu * 2)
-        buttom = min(buttom, self.halfv * 2)
+        right = int(min(right, self.halfu * 2))
+        buttom = int(min(buttom, self.halfv * 2))
         MM = np.zeros_like(image)
         MM[top:buttom, left:right] = 1
         image = image * MM
