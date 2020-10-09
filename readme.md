@@ -3,7 +3,7 @@
 [Pixel-wise Regression: 3D Hand Pose Estimation via Spatial-form Representation and Differentiable Decoder](https://arxiv.org/abs/1905.02085)  
 *Xingyuan Zhang, Fuhai Zhang*
 
-If you find this open source release useful, please reference in your paper:
+If you find this repository useful, please make a reference in your paper:
 ```
 @misc{zhang2019pixelwise,
     title={Pixel-wise Regression: 3D Hand Pose Estimation via Spatial-form Representation and Differentiable Decoder},
@@ -15,10 +15,6 @@ If you find this open source release useful, please reference in your paper:
 }
 ```
 
-## Requirement  
-PyTorch >= 1.0  
-tensorboard (install by `pip install tb-nightly`)
-
 ## Setup
 ```
 conda env create -f env.yml
@@ -26,23 +22,30 @@ conda activate pixelwise
 ```
 
 ## Dataset  
-All datasets should be placed in `./Data` folder.  
+All datasets should be placed in `./Data` folder. After placing datasets correctly, run `python check_dataset.py --dataset <dataset_name>` to build the data files used to train.
+
+### NYU  
+1. Download the dataset from [website](https://jonathantompson.github.io/NYU_Hand_Pose_Dataset.htm#download).
+2. Unzip the files to `./Data` and rename the folder as `NYU`.
+
 ### MSRA  
 1. Download the dataset from [dropbox](https://www.dropbox.com/s/bmx2w0zbnyghtp7/cvpr15_MSRAHandGestureDB.zip?dl=0).
 2. Unzip the files to `./Data` and rename the folder as `MSRA`.
-3. Download the default [train.txt](https://drive.google.com/open?id=1RESPwhnlbQ1Rg7qNPCJ0zGBy7aOjdGmB) and [test.txt](https://drive.google.com/open?id=1QZTl5X5IX4GPZ429l_EOkf0yBnzYGQHO) from Google Drive. In our default setting, 76318 out of 76375 frames are valid for training. If you don't want to use our default setting, feel free to change the parameters in `datasets.py`, and run `python check_dataset.py --dataset MSRA` to build the data files.
 
 ### ICVL  
 1. Download the dataset from [here](https://labicvl.github.io/hand.html).  
 2. Extract `Training.tar.gz` and `Testing.tar.gz` to `./Data/ICVL/Training` and `./Data/ICVL/Testing` respectively.
-3. Download the default [train.txt](https://drive.google.com/open?id=1xuIr5hAJFEu1dIEuzXm6yiOCxA6DHDDA) and [test.txt](https://drive.google.com/open?id=1ucn9QjyRBL9463ihC2qt60uetXUSkeJQ) from Google Drive. In our default setting, 22059 out of 22068 frames are valid for training. If you don't want to use our default setting, feel free to change the parameters in `datasets.py`, and run `python check_dataset.py --dataset ICVL` to build the data files.
 
 ### HAND17  
-1. Ask for the permission from the author of the dataset and download.  
-http://icvl.ee.ic.ac.uk/hands17/challenge/
-2. Extract `frame.zip` and `images.zip` to `./Data/HAND17/`. Your should end with a folder look like below:
+1. Ask for the permission from the [website](http://icvl.ee.ic.ac.uk/hands17/challenge/) and download.  
+2. Download center files from github release, and put them in `Data/HAND17/`.
+3. Extract `frame.zip` and `images.zip` to `./Data/HAND17/`. Your should end with a folder look like below:
 ```
 HAND17/
+  |
+  |-- hands17_center_train.txt
+  |
+  |-- hands17_center_test.txt
   |
   |-- training/
   |     |
@@ -56,18 +59,16 @@ HAND17/
   |     |
   |     |-- BoundingBox.txt
 ```
-3. Download the default [train.txt](https://drive.google.com/open?id=1ZX1Ain24IiEtDcpqnZYcMhrOk4N_9E4X) and [test.txt](https://drive.google.com/open?id=17p6suS5e-6qjDr0XtfAVxpEoEvDd_tx1) from Google Drive. In our default setting, 951950 out of 957032 frames are valid for training. If you don't want to use our default setting, feel free to change the parameters in `datasets.py`, and run `python check_dataset.py --dataset HAND17` to build the data files.
 
 ## Train  
-Run `python train.py --dataset <DatasetName>`, `DatasetName` can choose from `MSRA`, `ICVL` and `HAND17`.  
-Run `python train.py -h` to find parameters that you can tune.
+Run `python train.py --dataset <dataset_name>`, `dataset_name` can be chose from `NYU`, `ICVL` and `HAND17`.  
+
+For `MSRA` dataset, you should run `python train_msra.py --subject <subject_id>`.
 
 ## Test  
-Run `python test.py --dataset <DatasetName>`.  
-Run `python train.py -h` to find parameters that you can tune.
+Run `python test.py --dataset <dataset_name>`.
 
-## Result  
-You can download our results from Google Drive
-- MSRA: [test result]() [model]()
-- ICVL: [test result]() [model]()
-- HAND17: [test result]() [model]()
+For `MSRA` dataset, you should run `python test_msra.py --subject <subject_id>`.
+
+## Results  
+Results and pretrained models are available in github release.
