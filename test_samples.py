@@ -163,6 +163,7 @@ if __name__ == '__main__':
     joints = testset.joint_number
     config = testset.config
     threshold = testset.cube_size
+    skeleton_mode = 1 if args.dataset == 'HAND17' else 0
 
     test_loader = torch.utils.data.DataLoader(testset, **test_loader_parameters)
 
@@ -189,8 +190,8 @@ if __name__ == '__main__':
         img = img.cpu().numpy()
         uvd = uvd.numpy()
 
-        skeleton_gt = draw_skeleton(img[0,0], uvd[0,:,:2])
-        skeleton_pre = draw_skeleton(img[0,0], _uvd[0,:,:2])
+        skeleton_gt = draw_skeleton(img[0,0], uvd[0,:,:2], skeleton_mode=skeleton_mode)
+        skeleton_pre = draw_skeleton(img[0,0], _uvd[0,:,:2], skeleton_mode=skeleton_mode)
         skeleton_gt = np.clip(skeleton_gt, 0, 1)
         skeleton_pre = np.clip(skeleton_pre, 0, 1)
         
