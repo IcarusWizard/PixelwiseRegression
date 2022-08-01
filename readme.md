@@ -16,7 +16,7 @@ If you find this repository useful, please make a reference in your paper:
     doi={10.1109/TMM.2020.3047552}
 }
 ```
-**Update:** The paper has been acceptted at TMM! Title has changed as suggested by ont of the reviewers. Please consider cite the new version. I did not upload the new version to Arxiv since I am not sure if it is allowed. If you know it is ok to do so, please contact me and I am glad to do the update.
+**Update:** The paper has been acceptted at [TMM](https://ieeexplore.ieee.org/document/9309323)! Title has changed as suggested by ont of the reviewers. Please consider cite the new version. I did not upload the new version to Arxiv since I am not sure if it is allowed. If you know it is ok to do so, please contact me and I am glad to do the update.
 
 ## Setup
 ```
@@ -74,4 +74,4 @@ Run `python test.py --dataset <dataset_name>`.
 For `MSRA` dataset, you should run `python test_msra.py --subject <subject_id>`.
 
 ## Results  
-Results and pretrained models are available in github release.
+Results and pretrained models are available in [github release](https://github.com/IcarusWizard/PixelwiseRegression/releases/tag/v1.0).
