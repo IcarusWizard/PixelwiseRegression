@@ -5,15 +5,18 @@
 
 If you find this repository useful, please make a reference in your paper:
 ```
-@misc{zhang2019pixelwise,
-    title={Pixel-wise Regression: 3D Hand Pose Estimation via Spatial-form Representation and Differentiable Decoder},
-    author={Xingyuan Zhang and Fuhai Zhang},
-    year={2019},
-    eprint={1905.02085},
-    archivePrefix={arXiv},
-    primaryClass={cs.CV}
+@ARTICLE{zhang2022srnet,  
+    author={Zhang, Xingyuan and Zhang, Fuhai},  
+    journal={IEEE Transactions on Multimedia},   
+    title={Differentiable Spatial Regression: A Novel Method for 3D Hand Pose Estimation},   
+    year={2022},  
+    volume={24},  
+    number={},  
+    pages={166-176},  
+    doi={10.1109/TMM.2020.3047552}
 }
 ```
+**Update:** The paper has been acceptted at TMM! Title has changed as suggested by ont of the reviewers. Please consider cite the new version. I did not upload the new version to Arxiv since I am not sure if it is allowed. If you know it is ok to do so, please contact me and I am glad to do the update.
 
 ## Setup
 ```
