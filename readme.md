@@ -74,4 +74,4 @@ Run `python test.py --dataset <dataset_name>`.
 For `MSRA` dataset, you should run `python test_msra.py --subject <subject_id>`.
 
 ## Results  
-Results and pretrained models are available in [github release](https://github.com/IcarusWizard/PixelwiseRegression/releases/tag/v1.0).
+Results and pretrained models are available in [github release](https://github.com/IcarusWizard/PixelwiseRegression/releases/tag/v1.0). These pretrained models are under a [_CC BY 4.0 license_](https://creativecommons.org/licenses/by/4.0/).
